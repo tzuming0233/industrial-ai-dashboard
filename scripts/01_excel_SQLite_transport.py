@@ -21,7 +21,7 @@ DATA_XLSX = BASE_DIR / "data" / "실적데이터.xlsx"
 DB_PATH = BASE_DIR / "db" / "실적관리.db"
 
 COLUMNS = [
-    "구분", "업체명", "용역명", "사업구분",
+    "구분", "업체명", "용역명", "사업구분", "진행상태", "진행률",
     "시작일", "종료일", "계약금액", "기수입금액", "당해년도수입금액",
 ]
 
@@ -42,6 +42,8 @@ def 원본_데이터_읽기() -> pd.DataFrame:
 
     for 금액컬럼 in ["계약금액", "기수입금액", "당해년도수입금액"]:
         df[금액컬럼] = pd.to_numeric(df[금액컬럼], errors="coerce").fillna(0).astype(int)
+    df["진행률"] = pd.to_numeric(df["진행률"], errors="coerce").fillna(0).clip(0, 100).astype(int)
+    df["진행상태"] = df["진행상태"].fillna("진행중")
 
     return df[COLUMNS]
 
@@ -59,6 +61,8 @@ def SQLite로_적재(df: pd.DataFrame) -> None:
                 업체명 TEXT,
                 용역명 TEXT,
                 사업구분 TEXT,
+                진행상태 TEXT DEFAULT '진행중',
+                진행률 INTEGER DEFAULT 0,
                 시작일 TEXT,
                 종료일 TEXT,
                 계약금액 INTEGER DEFAULT 0,
