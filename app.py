@@ -1952,6 +1952,12 @@ with 채팅_영역:
     대화_id_리스트 = [d["id"] for d in 대화_목록]
     대화_제목_맵 = {d["id"]: (d["제목"] or f"새 대화 ({d['생성일시'][:16]})") for d in 대화_목록}
 
+    # "현재_대화_id"는 selectbox 위젯이 소유한 session_state 키라 위젯이 이미 그려진 뒤에는
+    # 직접 대입할 수 없다 — 전환 요청은 별도 키에 잠시 담아뒀다가, 위젯이 그려지기 전인
+    # 다음 런 시작 시점에 반영한다.
+    if "대화_전환_요청" in st.session_state:
+        st.session_state["현재_대화_id"] = st.session_state.pop("대화_전환_요청")
+
     대화선택_col, 새대화_col, 삭제_col = st.columns([3, 1, 1])
     with 대화선택_col:
         현재_대화_id = st.selectbox(
@@ -1962,7 +1968,7 @@ with 채팅_영역:
     with 새대화_col:
         if st.button("＋ 새 대화", use_container_width=True):
             새_id = 대화_생성()
-            st.session_state["현재_대화_id"] = 새_id
+            st.session_state["대화_전환_요청"] = 새_id
             st.session_state.pop("대기중_제안", None)
             st.session_state.pop("삭제확인_대화id", None)
             st.rerun()
