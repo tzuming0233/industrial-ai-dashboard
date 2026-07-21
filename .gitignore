@@ -1,4 +1,5 @@
 .env
+*.pem
 db/*.db
 db/*.bak
 myenv/
