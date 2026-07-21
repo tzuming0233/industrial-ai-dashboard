@@ -1255,6 +1255,14 @@ def _스타일_적용() -> None:
             from {{ opacity: 0; transform: translateY(4px); }}
             to {{ opacity: 1; transform: translateY(0); }}
         }}
+
+        /* 모바일 화면: 상단 로고바를 더 촘촘하게, 날짜 부제목은 숨겨서 공간을 아낀다 */
+        @media (max-width: 640px) {{
+            .dc-topbar {{ padding: 14px 16px !important; }}
+            .dc-topbar img {{ height: 34px !important; }}
+            .dc-topbar-divider {{ display: none; }}
+            .dc-topbar-sub {{ display: none; }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1306,17 +1314,18 @@ DB_준비()
 if 로고_data_uri:
     st.markdown(
         f"""
-        <div style="background: {카드_배경}; border: 1px solid {테두리색}; border-radius: 8px;
+        <div class="dc-topbar" style="background: {카드_배경}; border: 1px solid {테두리색}; border-radius: 8px;
                     box-shadow: {카드_그림자}; padding: 20px 28px; margin-bottom: 22px;
-                    display: flex; align-items: center; justify-content: space-between;">
-            <div style="display: flex; align-items: center; gap: 20px;">
+                    display: flex; align-items: center; justify-content: space-between;
+                    flex-wrap: wrap; gap: 12px;">
+            <div class="dc-topbar-brand" style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
                 <img src="{로고_data_uri}" style="height: 48px;" alt="KPC 한국생산성본부" />
-                <div style="width: 1px; height: 36px; background: {테두리색};"></div>
+                <div class="dc-topbar-divider" style="width: 1px; height: 36px; background: {테두리색};"></div>
                 <div style="font-size: 20px; font-weight: 700; color: {본문색};">
                     산업AI팀 사업 통합관리
                 </div>
             </div>
-            <div style="font-size: 13px; color: {보조텍스트색};">
+            <div class="dc-topbar-sub" style="font-size: 13px; color: {보조텍스트색};">
                 산업AI팀 전용 실적관리 대시보드 · {_dt.date.today().isoformat()}
             </div>
         </div>
