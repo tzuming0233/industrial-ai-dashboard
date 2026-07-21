@@ -2,16 +2,16 @@
 
 산업AI팀 전용 실적관리 Streamlit 앱입니다. 실적 데이터를 SQLite에 담아
 대시보드/표/간트차트로 보여주고, 대시보드 화면에서 직접 데이터를 입력·수정하며,
-자연어로 Claude에게 질의(채팅)할 수 있습니다.
+자연어로 AI에게 질의(채팅)할 수 있습니다.
 
 ## 폴더 구조
 
 ```
 industrial_ai_dashboard/
 ├─ app.py                              # Streamlit 메인 앱 (대시보드/표/간트차트/데이터 관리/AI 채팅)
-├─ ai_agent.py                         # Claude API tool-use 자연어 질의
+├─ ai_agent.py                         # OpenAI API tool-use 자연어 질의
 ├─ requirements.txt                    # 필요 패키지 목록
-├─ .env.example                        # 환경변수 예시 (ANTHROPIC_API_KEY)
+├─ .env.example                        # 환경변수 예시 (OPENAI_API_KEY)
 ├─ data/
 │  └─ 실적데이터.csv                    # 예시 데이터 (가상 데이터, DB가 없을 때 초기 시드용)
 ├─ scripts/
@@ -26,7 +26,7 @@ industrial_ai_dashboard/
 - 매출현황 표: 사업구분·구분 필터 + CSV 내보내기
 - 간트차트: 용역기간(시작일~종료일) 타임라인
 - 데이터 관리: 사업현황을 엑셀처럼 표에서 직접 추가·수정·삭제 후 저장
-- AI 채팅: 자연어 질문 → SQLite 조회 도구를 호출해 Claude가 답변, 대화 이력은 DB에 영구 저장
+- AI 채팅: 자연어 질문 → SQLite 조회 도구를 호출해 AI가 답변, 대화 이력은 DB에 영구 저장
 
 ## 준비 사항
 
@@ -35,7 +35,7 @@ industrial_ai_dashboard/
    ```
    pip install -r requirements.txt
    ```
-3. (AI 채팅 탭을 쓰려면) `.env.example` 을 복사해 `.env` 로 저장하고 `ANTHROPIC_API_KEY` 값을 채워 넣기
+3. (AI 채팅 탭을 쓰려면) `.env.example` 을 복사해 `.env` 로 저장하고 `OPENAI_API_KEY` 값을 채워 넣기
    (`.env` 는 git에 올리지 않습니다 — `.gitignore` 참고)
 
 ## 실행 방법
