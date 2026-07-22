@@ -1185,15 +1185,8 @@ def _스타일_적용() -> None:
             font-variant-numeric: tabular-nums;
         }}
 
-        /* 탭 대신 쓰는 메뉴 선택창 -> 버튼 느낌의 pill 드롭다운, 폭은 내용에 맞게 좁게 */
-        .st-key-현재_탭_선택 {{ max-width: 260px; margin-bottom: 14px; }}
-        .st-key-현재_탭_선택 [data-baseweb="select"] > div {{
-            border-radius: 20px;
-            border-color: {테두리색};
-            background: {남색_연하게};
-            font-weight: 600;
-            color: {본문색};
-        }}
+        /* 탭 대신 쓰는 메뉴 팝오버 버튼 — 내용 크기만큼만 차지, 공간 낭비 최소화 */
+        .st-key-현재_탭_선택 [role="radiogroup"] {{ gap: 2px; }}
 
         /* 검색창/입력창 -> 알약 모양 (KPC 그룹웨어 검색 인풋 톤) */
         [data-baseweb="input"] > div, [data-baseweb="base-input"] {{
@@ -1240,9 +1233,6 @@ def _스타일_적용() -> None:
         [data-testid="stMetric"] {{ padding: 12px 14px; }}
         [data-testid="stMetricValue"] {{ font-size: 1.5rem !important; }}
 
-        /* ☰ 메뉴 버튼은 모바일 전용 — 데스크톱에서는 항상 숨김 */
-        .dc-menu-toggle, .dc-menu-btn {{ display: none; }}
-
         /* 모바일 화면: 전체적으로 더 촘촘하게 — Claude 모바일 앱 정도의 여백/크기 밀도를 목표로 함 */
         @media (max-width: 640px) {{
             .dc-topbar {{ padding: 14px 16px !important; }}
@@ -1258,36 +1248,13 @@ def _스타일_적용() -> None:
             [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.05rem !important; }}
             [data-testid="stMarkdownContainer"] h3 {{ font-size: 0.95rem !important; }}
 
-            /* AI 채팅이 이 앱에서 제일 중요한 기능이라, 모바일에서는 본문보다 위로 올린다
-               (데스크톱 레이아웃 순서는 그대로 두고, 이 미디어쿼리 안에서만 순서를 뒤집는다) */
-            div[data-testid="stElementContainer"]:has(#dc-layout-marker)
-                + div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(2) {{
-                order: -1;
+            /* AI 채팅이 이 앱에서 제일 중요한 기능이라, 모바일에서는 본문(메뉴 팝오버 버튼 +
+               선택된 탭 내용)보다 위로 올린다 — 컬럼이 세로로 쌓일 때의 순서만 뒤집는 것이라
+               데스크톱(가로 배치)에는 영향이 없다. st.columns가 key를 지원하지 않아
+               st.container(key="본문_레이아웃")로 감싸서 정확히 이 레이아웃만 골라 타깃한다. */
+            .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"] {{
+                flex-direction: column-reverse !important;
             }}
-
-            /* 대시보드/표/온톨로지 등 나머지 전부는 기본적으로 숨겨두고, 왼쪽 위 ☰ 버튼을
-               눌렀을 때만 펼친다 — 모바일에서는 AI 채팅이 첫 화면의 주인공이 되도록 함 */
-            .dc-menu-toggle {{ display: none; }}
-            .dc-menu-btn {{
-                display: inline-flex; align-items: center; justify-content: center;
-                width: 26px; height: 26px; border-radius: 6px;
-                background: {남색_연하게}; color: {남색};
-                font-size: 13px; font-weight: 700; cursor: pointer;
-                margin-bottom: 6px; user-select: none;
-            }}
-            div[data-testid="stElementContainer"]:has(#dc-layout-marker)
-                + div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(1) {{
-                display: none;
-            }}
-            body:has(#dc-menu-toggle:checked)
-                div[data-testid="stElementContainer"]:has(#dc-layout-marker)
-                + div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(1) {{
-                display: block !important;
-            }}
-
-            /* 메뉴 선택창: 폭을 화면에 맞게, 살짝 더 작게 */
-            .st-key-현재_탭_선택 {{ max-width: 100%; }}
-            .st-key-현재_탭_선택 [data-baseweb="select"] > div {{ font-size: 13px; min-height: 2.1rem; }}
 
             /* 지표 카드: 패딩/글자 크기 축소 */
             [data-testid="stMetric"] {{ padding: 8px 10px; }}
@@ -1388,23 +1355,20 @@ if 로고_data_uri:
 담당자_옵션 = sorted(전체_df["담당자"].fillna("").unique())
 구분_색상맵 = _단조_색상맵(구분_옵션)
 
-st.markdown(
-    '<input type="checkbox" id="dc-menu-toggle" class="dc-menu-toggle" />'
-    '<label for="dc-menu-toggle" class="dc-menu-btn">☰</label>'
-    '<div id="dc-layout-marker"></div>',
-    unsafe_allow_html=True,
-)
-메인_영역, 채팅_영역 = st.columns([7, 3], gap="medium")
+본문_레이아웃 = st.container(key="본문_레이아웃")
+메인_영역, 채팅_영역 = 본문_레이아웃.columns([7, 3], gap="medium")
 
 with 메인_영역:
     _탭_아이콘 = {
         "대시보드": "📊", "매출현황 표": "📋", "마일스톤": "🗓️",
         "사업 온톨로지": "🕸️", "데이터 관리": "🛠️",
     }
-    현재_탭_선택 = st.selectbox(
-        "메뉴", list(_탭_아이콘.keys()), key="현재_탭_선택",
-        format_func=lambda x: f"{_탭_아이콘[x]}  {x}", label_visibility="collapsed",
-    )
+    _저장된_탭 = st.session_state.get("현재_탭_선택", "대시보드")
+    with st.popover(f"{_탭_아이콘[_저장된_탭]} {_저장된_탭}  ▾", use_container_width=False):
+        현재_탭_선택 = st.radio(
+            "메뉴", list(_탭_아이콘.keys()), key="현재_탭_선택",
+            format_func=lambda x: f"{_탭_아이콘[x]}  {x}", label_visibility="collapsed",
+        )
 
     if 현재_탭_선택 == "대시보드":
         오늘 = _dt.date.today()
