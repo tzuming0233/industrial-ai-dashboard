@@ -1240,6 +1240,9 @@ def _스타일_적용() -> None:
         [data-testid="stMetric"] {{ padding: 12px 14px; }}
         [data-testid="stMetricValue"] {{ font-size: 1.5rem !important; }}
 
+        /* ☰ 메뉴 버튼은 모바일 전용 — 데스크톱에서는 항상 숨김 */
+        .dc-menu-toggle, .dc-menu-btn {{ display: none; }}
+
         /* 모바일 화면: 전체적으로 더 촘촘하게 — Claude 모바일 앱 정도의 여백/크기 밀도를 목표로 함 */
         @media (max-width: 640px) {{
             .dc-topbar {{ padding: 14px 16px !important; }}
@@ -1260,6 +1263,26 @@ def _스타일_적용() -> None:
             div[data-testid="stElementContainer"]:has(#dc-layout-marker)
                 + div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(2) {{
                 order: -1;
+            }}
+
+            /* 대시보드/표/온톨로지 등 나머지 전부는 기본적으로 숨겨두고, 왼쪽 위 ☰ 버튼을
+               눌렀을 때만 펼친다 — 모바일에서는 AI 채팅이 첫 화면의 주인공이 되도록 함 */
+            .dc-menu-toggle {{ display: none; }}
+            .dc-menu-btn {{
+                display: inline-flex; align-items: center; justify-content: center;
+                width: 26px; height: 26px; border-radius: 6px;
+                background: {남색_연하게}; color: {남색};
+                font-size: 13px; font-weight: 700; cursor: pointer;
+                margin-bottom: 6px; user-select: none;
+            }}
+            div[data-testid="stElementContainer"]:has(#dc-layout-marker)
+                + div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(1) {{
+                display: none;
+            }}
+            body:has(#dc-menu-toggle:checked)
+                div[data-testid="stElementContainer"]:has(#dc-layout-marker)
+                + div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(1) {{
+                display: block !important;
             }}
 
             /* 메뉴 선택창: 폭을 화면에 맞게, 살짝 더 작게 */
@@ -1365,7 +1388,12 @@ if 로고_data_uri:
 담당자_옵션 = sorted(전체_df["담당자"].fillna("").unique())
 구분_색상맵 = _단조_색상맵(구분_옵션)
 
-st.markdown('<div id="dc-layout-marker"></div>', unsafe_allow_html=True)
+st.markdown(
+    '<input type="checkbox" id="dc-menu-toggle" class="dc-menu-toggle" />'
+    '<label for="dc-menu-toggle" class="dc-menu-btn">☰</label>'
+    '<div id="dc-layout-marker"></div>',
+    unsafe_allow_html=True,
+)
 메인_영역, 채팅_영역 = st.columns([7, 3], gap="medium")
 
 with 메인_영역:
