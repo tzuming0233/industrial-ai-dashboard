@@ -1028,7 +1028,7 @@ def _온톨로지_노드_표시라벨(이름: str, 유형: str, 최대길이: in
 
 
 def _온톨로지_그래프_데이터(
-    노드_df: pd.DataFrame, 관계_df: pd.DataFrame, 팔레트: dict, 강조_id_집합: set, 높이: int = 620,
+    노드_df: pd.DataFrame, 관계_df: pd.DataFrame, 팔레트: dict, 강조_id_집합: set, 높이: int = 460,
 ) -> dict:
     """vis-network(물리 시뮬레이션·드래그 지원)에 그대로 먹일 수 있는 노드/엣지/옵션 JSON을 만든다."""
     노드_목록 = []
@@ -1123,16 +1123,17 @@ def _온톨로지_그래프_컴포넌트():
     )
 
 
-def _차트_공통레이아웃(fig, showlegend: bool = False) -> None:
+def _차트_공통레이아웃(fig, showlegend: bool = False, height: int = 300) -> None:
     """모든 차트에 공통 크롬(폰트·배경·격자)을 적용해 대시보드 톤과 통일한다."""
     fig.update_layout(
         showlegend=showlegend,
         legend=dict(font=dict(color=본문색)),
         plot_bgcolor=인셋_배경,
         paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, Malgun Gothic, Apple SD Gothic Neo, sans-serif", size=12, color=보조텍스트색),
-        title_font=dict(size=14, color=본문색),
-        margin=dict(l=10, r=10, t=40, b=10),
+        font=dict(family="Inter, Malgun Gothic, Apple SD Gothic Neo, sans-serif", size=11, color=보조텍스트색),
+        title_font=dict(size=13, color=본문색),
+        margin=dict(l=10, r=10, t=36, b=10),
+        height=height,
     )
     fig.update_xaxes(gridcolor=차트_격자색, zeroline=False, linecolor=테두리색)
     fig.update_yaxes(gridcolor=차트_격자색, zeroline=False, linecolor=테두리색)
@@ -1184,27 +1185,15 @@ def _스타일_적용() -> None:
             font-variant-numeric: tabular-nums;
         }}
 
-        /* 탭 -> Ghost Nav Link + pill 하이라이트 */
-        [data-baseweb="tab-list"] {{
-            background: transparent;
-            border-bottom: 1px solid {테두리색};
-            gap: 4px;
-        }}
-        [data-baseweb="tab-list"] button[data-baseweb="tab"] {{
-            border-radius: 30px;
-            color: {보조텍스트색};
-            font-weight: 500;
-            transition: color 0.15s ease, background 0.15s ease;
-        }}
-        [data-baseweb="tab-list"] button[data-baseweb="tab"]:hover {{
-            color: {본문색};
-        }}
-        [data-baseweb="tab-list"] button[aria-selected="true"] {{
-            color: {본문색};
+        /* 탭 대신 쓰는 메뉴 선택창 -> 버튼 느낌의 pill 드롭다운, 폭은 내용에 맞게 좁게 */
+        .st-key-현재_탭_선택 {{ max-width: 260px; margin-bottom: 14px; }}
+        .st-key-현재_탭_선택 [data-baseweb="select"] > div {{
+            border-radius: 20px;
+            border-color: {테두리색};
             background: {남색_연하게};
-            box-shadow: inset 3px 0 0 {남색};
+            font-weight: 600;
+            color: {본문색};
         }}
-        [data-baseweb="tab-highlight"] {{ display: none; }}
 
         /* 검색창/입력창 -> 알약 모양 (KPC 그룹웨어 검색 인풋 톤) */
         [data-baseweb="input"] > div, [data-baseweb="base-input"] {{
@@ -1247,14 +1236,9 @@ def _스타일_적용() -> None:
             box-shadow: {카드_그림자};
         }}
 
-        /* 탭 전환 시 콘텐츠가 살짝 떠오르며 나타나는 애니메이션 */
-        [data-testid="stTabContent"] {{
-            animation: dc-fade-in 0.25s ease;
-        }}
-        @keyframes dc-fade-in {{
-            from {{ opacity: 0; transform: translateY(4px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
+        /* 지표/표/차트 카드 전반의 여백을 데스크톱에서도 조금 더 촘촘하게 */
+        [data-testid="stMetric"] {{ padding: 12px 14px; }}
+        [data-testid="stMetricValue"] {{ font-size: 1.5rem !important; }}
 
         /* 모바일 화면: 전체적으로 더 촘촘하게 — Claude 모바일 앱 정도의 여백/크기 밀도를 목표로 함 */
         @media (max-width: 640px) {{
@@ -1265,33 +1249,32 @@ def _스타일_적용() -> None:
 
             [data-testid="stAppViewContainer"] .block-container {{
                 padding-top: 3rem !important;
-                padding-left: 0.75rem !important;
-                padding-right: 0.75rem !important;
+                padding-left: 0.6rem !important;
+                padding-right: 0.6rem !important;
             }}
-            [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.15rem !important; }}
-            [data-testid="stMarkdownContainer"] h3 {{ font-size: 1.02rem !important; }}
+            [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.05rem !important; }}
+            [data-testid="stMarkdownContainer"] h3 {{ font-size: 0.95rem !important; }}
+
+            /* AI 채팅이 이 앱에서 제일 중요한 기능이라, 모바일에서는 본문보다 위로 올린다
+               (데스크톱 레이아웃 순서는 그대로 두고, 이 미디어쿼리 안에서만 순서를 뒤집는다) */
+            div[data-testid="stElementContainer"]:has(#dc-layout-marker)
+                + div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(2) {{
+                order: -1;
+            }}
+
+            /* 메뉴 선택창: 폭을 화면에 맞게, 살짝 더 작게 */
+            .st-key-현재_탭_선택 {{ max-width: 100%; }}
+            .st-key-현재_탭_선택 [data-baseweb="select"] > div {{ font-size: 13px; min-height: 2.1rem; }}
 
             /* 지표 카드: 패딩/글자 크기 축소 */
-            [data-testid="stMetric"] {{ padding: 10px 12px; }}
-            [data-testid="stMetricLabel"] {{ font-size: 10.5px !important; }}
-            [data-testid="stMetricValue"] {{ font-size: 1.3rem !important; }}
-
-            /* 탭: 여러 줄로 접히지 않고 가로 스크롤되는 앱 스타일 탭바 */
-            [data-baseweb="tab-list"] {{
-                flex-wrap: nowrap !important;
-                overflow-x: auto;
-                gap: 2px;
-            }}
-            [data-baseweb="tab-list"] button[data-baseweb="tab"] {{
-                font-size: 12.5px !important;
-                padding: 6px 10px !important;
-                white-space: nowrap;
-            }}
+            [data-testid="stMetric"] {{ padding: 8px 10px; }}
+            [data-testid="stMetricLabel"] {{ font-size: 10px !important; }}
+            [data-testid="stMetricValue"] {{ font-size: 1.05rem !important; }}
 
             /* 버튼 패딩/글자 축소 */
             button[kind="primary"], button[kind="secondary"] {{
-                font-size: 13px !important;
-                padding: 0.35rem 0.9rem !important;
+                font-size: 12.5px !important;
+                padding: 0.3rem 0.8rem !important;
             }}
 
             /* 표/차트 카드 모서리·여백도 살짝 축소 */
@@ -1300,8 +1283,12 @@ def _스타일_적용() -> None:
                 border-radius: 6px;
             }}
 
-            /* 온톨로지 그래프: 데스크톱용 고정 620px는 모바일엔 과함 (JS가 준 inline height를 !important로 덮어씀) */
-            .ont-graph-container {{ height: 380px !important; }}
+            /* 온톨로지 그래프: 데스크톱용 고정 높이는 모바일엔 과함 (JS가 준 inline height를 !important로 덮어씀) */
+            .ont-graph-container {{ height: 300px !important; }}
+
+            /* AI 채팅창도 화면 높이에 맞게 축소 */
+            .st-key-채팅_상자 {{ height: 380px !important; }}
+            .st-key-채팅_상자 > div {{ height: 380px !important; }}
         }}
         </style>
         """,
@@ -1378,14 +1365,20 @@ if 로고_data_uri:
 담당자_옵션 = sorted(전체_df["담당자"].fillna("").unique())
 구분_색상맵 = _단조_색상맵(구분_옵션)
 
+st.markdown('<div id="dc-layout-marker"></div>', unsafe_allow_html=True)
 메인_영역, 채팅_영역 = st.columns([7, 3], gap="medium")
 
 with 메인_영역:
-    탭_대시보드, 탭_표, 탭_마일스톤, 탭_온톨로지, 탭_데이터관리 = st.tabs(
-        ["대시보드", "매출현황 표", "마일스톤", "사업 온톨로지", "데이터 관리"]
+    _탭_아이콘 = {
+        "대시보드": "📊", "매출현황 표": "📋", "마일스톤": "🗓️",
+        "사업 온톨로지": "🕸️", "데이터 관리": "🛠️",
+    }
+    현재_탭_선택 = st.selectbox(
+        "메뉴", list(_탭_아이콘.keys()), key="현재_탭_선택",
+        format_func=lambda x: f"{_탭_아이콘[x]}  {x}", label_visibility="collapsed",
     )
 
-    with 탭_대시보드:
+    if 현재_탭_선택 == "대시보드":
         오늘 = _dt.date.today()
         임박_df = 전체_df.copy()
         임박_df["종료일_dt"] = pd.to_datetime(임박_df["종료일"], errors="coerce")
@@ -1489,7 +1482,7 @@ with 메인_영역:
             _차트_공통레이아웃(fig5)
             st.plotly_chart(fig5, use_container_width=True)
 
-    with 탭_표:
+    if 현재_탭_선택 == "매출현황 표":
         검색어 = st.text_input("업체명·용역명 검색", placeholder="예: 한국공대, 스마트공장")
         표시_df = 전체_df
         if 검색어.strip():
@@ -1570,7 +1563,7 @@ with 메인_영역:
                 mime="text/csv",
             )
 
-    with 탭_마일스톤:
+    if 현재_탭_선택 == "마일스톤":
         st.subheader("마일스톤 타임라인")
         st.caption(
             "연한 막대는 전체 용역기간, 진한 막대는 진행률만큼 채워진 실제 진행 구간입니다. "
@@ -1634,9 +1627,10 @@ with 메인_영역:
             ))
             fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=마일스톤_df["표시명"].tolist())
             fig.update_layout(
-                barmode="overlay", height=max(420, len(마일스톤_df) * 30),
-                title=dict(text=f"마일스톤 타임라인 · {전체_건수}건", font=dict(size=15, color=본문색)),
+                barmode="overlay", height=max(300, len(마일스톤_df) * 26),
+                title=dict(text=f"마일스톤 타임라인 · {전체_건수}건", font=dict(size=13, color=본문색)),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                margin=dict(l=10, r=10, t=48, b=10),
             )
 
             fig.add_vline(x=오늘_dt, line_dash="dash", line_color=엠버코랄, annotation_text="오늘", annotation_position="top")
@@ -1692,7 +1686,7 @@ with 메인_영역:
                 },
             )
 
-    with 탭_데이터관리:
+    if 현재_탭_선택 == "데이터 관리":
         st.subheader("사업현황 데이터 관리")
         st.caption("표를 엑셀처럼 직접 수정하세요. 행 끝의 빈 행에 새 데이터를 입력하거나, 행을 선택해 삭제할 수 있습니다.")
 
@@ -1811,7 +1805,7 @@ with 메인_영역:
                 else:
                     st.warning("이름을 입력하세요.")
 
-    with 탭_온톨로지:
+    if 현재_탭_선택 == "사업 온톨로지":
         st.subheader("사업 온톨로지")
         st.caption(
             "오른쪽 AI 채팅에서 '이 사업은 저 사업의 후속이야', '이 두 사업은 같은 고객사야', "
@@ -1858,7 +1852,7 @@ with 메인_영역:
             그래프_데이터 = _온톨로지_그래프_데이터(표시할_노드_df, 표시할_관계_df, 노드_유형_팔레트, 강조_노드id_집합)
             그래프_컴포넌트 = _온톨로지_그래프_컴포넌트()
             그래프결과 = 그래프_컴포넌트(
-                data=그래프_데이터, height=620, key="온톨로지_그래프",
+                data=그래프_데이터, height=460, key="온톨로지_그래프",
                 on_node_click_change=lambda: None, on_edge_click_change=lambda: None,
             )
             if 그래프결과.edge_click:
@@ -2039,7 +2033,7 @@ with 채팅_영역:
             st.session_state.pop("삭제확인_대화id", None)
             st.rerun()
 
-    채팅_컨테이너 = st.container(height=560, border=True)
+    채팅_컨테이너 = st.container(height=480, border=True, key="채팅_상자")
     이전_기록 = 채팅기록_불러오기(현재_대화_id)
     with 채팅_컨테이너:
         if not 이전_기록:
