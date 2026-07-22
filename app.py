@@ -1256,12 +1256,52 @@ def _스타일_적용() -> None:
             to {{ opacity: 1; transform: translateY(0); }}
         }}
 
-        /* 모바일 화면: 상단 로고바를 더 촘촘하게, 날짜 부제목은 숨겨서 공간을 아낀다 */
+        /* 모바일 화면: 전체적으로 더 촘촘하게 — Claude 모바일 앱 정도의 여백/크기 밀도를 목표로 함 */
         @media (max-width: 640px) {{
             .dc-topbar {{ padding: 14px 16px !important; }}
             .dc-topbar img {{ height: 34px !important; }}
             .dc-topbar-divider {{ display: none; }}
             .dc-topbar-sub {{ display: none; }}
+
+            [data-testid="stAppViewContainer"] .block-container {{
+                padding-top: 3rem !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
+            }}
+            [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.15rem !important; }}
+            [data-testid="stMarkdownContainer"] h3 {{ font-size: 1.02rem !important; }}
+
+            /* 지표 카드: 패딩/글자 크기 축소 */
+            [data-testid="stMetric"] {{ padding: 10px 12px; }}
+            [data-testid="stMetricLabel"] {{ font-size: 10.5px !important; }}
+            [data-testid="stMetricValue"] {{ font-size: 1.3rem !important; }}
+
+            /* 탭: 여러 줄로 접히지 않고 가로 스크롤되는 앱 스타일 탭바 */
+            [data-baseweb="tab-list"] {{
+                flex-wrap: nowrap !important;
+                overflow-x: auto;
+                gap: 2px;
+            }}
+            [data-baseweb="tab-list"] button[data-baseweb="tab"] {{
+                font-size: 12.5px !important;
+                padding: 6px 10px !important;
+                white-space: nowrap;
+            }}
+
+            /* 버튼 패딩/글자 축소 */
+            button[kind="primary"], button[kind="secondary"] {{
+                font-size: 13px !important;
+                padding: 0.35rem 0.9rem !important;
+            }}
+
+            /* 표/차트 카드 모서리·여백도 살짝 축소 */
+            [data-testid="stDataFrame"], [data-testid="stDataFrameResizable"],
+            [data-testid="stPlotlyChart"] {{
+                border-radius: 6px;
+            }}
+
+            /* 온톨로지 그래프: 데스크톱용 고정 620px는 모바일엔 과함 (JS가 준 inline height를 !important로 덮어씀) */
+            .ont-graph-container {{ height: 380px !important; }}
         }}
         </style>
         """,
