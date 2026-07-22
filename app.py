@@ -1248,14 +1248,6 @@ def _스타일_적용() -> None:
             [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.05rem !important; }}
             [data-testid="stMarkdownContainer"] h3 {{ font-size: 0.95rem !important; }}
 
-            /* AI 채팅이 이 앱에서 제일 중요한 기능이라, 모바일에서는 본문(메뉴 팝오버 버튼 +
-               선택된 탭 내용)보다 위로 올린다 — 컬럼이 세로로 쌓일 때의 순서만 뒤집는 것이라
-               데스크톱(가로 배치)에는 영향이 없다. st.columns가 key를 지원하지 않아
-               st.container(key="본문_레이아웃")로 감싸서 정확히 이 레이아웃만 골라 타깃한다. */
-            .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"] {{
-                flex-direction: column-reverse !important;
-            }}
-
             /* 지표 카드: 패딩/글자 크기 축소 */
             [data-testid="stMetric"] {{ padding: 8px 10px; }}
             [data-testid="stMetricLabel"] {{ font-size: 10px !important; }}
@@ -1355,22 +1347,42 @@ if 로고_data_uri:
 담당자_옵션 = sorted(전체_df["담당자"].fillna("").unique())
 구분_색상맵 = _단조_색상맵(구분_옵션)
 
+_탭_아이콘 = {
+    "AI 채팅": "🤖", "대시보드": "📊", "매출현황 표": "📋", "마일스톤": "🗓️",
+    "사업 온톨로지": "🕸️", "데이터 관리": "🛠️",
+}
+_저장된_탭 = st.session_state.get("현재_탭_선택", "AI 채팅")
+with st.popover(f"{_탭_아이콘[_저장된_탭]} {_저장된_탭}  ▾", use_container_width=False):
+    현재_탭_선택 = st.radio(
+        "메뉴", list(_탭_아이콘.keys()), key="현재_탭_선택",
+        format_func=lambda x: f"{_탭_아이콘[x]}  {x}", label_visibility="collapsed",
+    )
+
+# 모바일(640px 이하)에서는 대시보드류 화면과 AI 채팅을 동시에 쌓아 보여주지 않고
+# 위 메뉴에서 고른 것 하나만 보여준다 — 로그인 후 기본값이 "AI 채팅"이라 이게 첫 화면이 된다.
+# 데스크톱은 이 규칙이 적용되지 않아 항상 대시보드+채팅이 나란히 보인다.
+_모바일_숨길_컬럼 = 1 if 현재_탭_선택 == "AI 채팅" else 2
+st.markdown(
+    f"""
+    <style>
+    @media (max-width: 640px) {{
+        .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"]
+            > div[data-testid="stColumn"]:nth-of-type({_모바일_숨길_컬럼}) {{
+            display: none !important;
+        }}
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 본문_레이아웃 = st.container(key="본문_레이아웃")
 메인_영역, 채팅_영역 = 본문_레이아웃.columns([7, 3], gap="medium")
 
 with 메인_영역:
-    _탭_아이콘 = {
-        "대시보드": "📊", "매출현황 표": "📋", "마일스톤": "🗓️",
-        "사업 온톨로지": "🕸️", "데이터 관리": "🛠️",
-    }
-    _저장된_탭 = st.session_state.get("현재_탭_선택", "대시보드")
-    with st.popover(f"{_탭_아이콘[_저장된_탭]} {_저장된_탭}  ▾", use_container_width=False):
-        현재_탭_선택 = st.radio(
-            "메뉴", list(_탭_아이콘.keys()), key="현재_탭_선택",
-            format_func=lambda x: f"{_탭_아이콘[x]}  {x}", label_visibility="collapsed",
-        )
-
-    if 현재_탭_선택 == "대시보드":
+    if 현재_탭_선택 == "AI 채팅":
+        st.caption("💬 오른쪽 AI 채팅에서 대화해보세요. (모바일에서는 위 메뉴로 다른 화면을 선택할 수 있어요)")
+    elif 현재_탭_선택 == "대시보드":
         오늘 = _dt.date.today()
         임박_df = 전체_df.copy()
         임박_df["종료일_dt"] = pd.to_datetime(임박_df["종료일"], errors="coerce")
@@ -1474,7 +1486,7 @@ with 메인_영역:
             _차트_공통레이아웃(fig5)
             st.plotly_chart(fig5, use_container_width=True)
 
-    if 현재_탭_선택 == "매출현황 표":
+    elif 현재_탭_선택 == "매출현황 표":
         검색어 = st.text_input("업체명·용역명 검색", placeholder="예: 한국공대, 스마트공장")
         표시_df = 전체_df
         if 검색어.strip():
@@ -1555,7 +1567,7 @@ with 메인_영역:
                 mime="text/csv",
             )
 
-    if 현재_탭_선택 == "마일스톤":
+    elif 현재_탭_선택 == "마일스톤":
         st.subheader("마일스톤 타임라인")
         st.caption(
             "연한 막대는 전체 용역기간, 진한 막대는 진행률만큼 채워진 실제 진행 구간입니다. "
@@ -1678,7 +1690,7 @@ with 메인_영역:
                 },
             )
 
-    if 현재_탭_선택 == "데이터 관리":
+    elif 현재_탭_선택 == "데이터 관리":
         st.subheader("사업현황 데이터 관리")
         st.caption("표를 엑셀처럼 직접 수정하세요. 행 끝의 빈 행에 새 데이터를 입력하거나, 행을 선택해 삭제할 수 있습니다.")
 
@@ -1797,7 +1809,7 @@ with 메인_영역:
                 else:
                     st.warning("이름을 입력하세요.")
 
-    if 현재_탭_선택 == "사업 온톨로지":
+    elif 현재_탭_선택 == "사업 온톨로지":
         st.subheader("사업 온톨로지")
         st.caption(
             "오른쪽 AI 채팅에서 '이 사업은 저 사업의 후속이야', '이 두 사업은 같은 고객사야', "
