@@ -1442,7 +1442,7 @@ st.markdown(
 
 with 메인_영역:
     if 현재_탭_선택 == "AI 채팅":
-        st.caption("💬 오른쪽 AI 채팅에서 대화해보세요. (모바일에서는 위 메뉴로 다른 화면을 선택할 수 있어요)")
+        pass
     elif 현재_탭_선택 == "대시보드":
         오늘 = _dt.date.today()
         임박_df = 전체_df.copy()
