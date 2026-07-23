@@ -1079,6 +1079,47 @@ def _온톨로지_그래프_데이터(
     return {"nodes": 노드_목록, "edges": 엣지_목록, "options": 옵션, "bgcolor": 카드_배경}
 
 
+def _PWA_컴포넌트():
+    """모바일에서 '홈 화면에 추가'가 가능하도록 manifest/서비스워커/애플 메타태그를
+    실제 <head>에 주입한다. st.markdown은 <head>를 건드릴 수 없어 v2 컴포넌트(샌드박스 없음)로 처리."""
+    return st_components_v2.component(
+        "pwa_setup",
+        js="""
+        export default function(component) {
+            if (!document.querySelector('link[rel="manifest"]')) {
+                const manifest = document.createElement('link');
+                manifest.rel = 'manifest';
+                manifest.href = '/app/static/manifest.json';
+                document.head.appendChild(manifest);
+            }
+            const metaTags = [
+                ['name', 'theme-color', '#1C90FB'],
+                ['name', 'apple-mobile-web-app-capable', 'yes'],
+                ['name', 'apple-mobile-web-app-title', '산업AI팀'],
+                ['name', 'apple-mobile-web-app-status-bar-style', 'default'],
+            ];
+            metaTags.forEach(([attr, name, content]) => {
+                if (!document.querySelector(`meta[${attr}="${name}"]`)) {
+                    const meta = document.createElement('meta');
+                    meta.setAttribute(attr, name);
+                    meta.content = content;
+                    document.head.appendChild(meta);
+                }
+            });
+            if (!document.querySelector('link[rel="apple-touch-icon"]')) {
+                const icon = document.createElement('link');
+                icon.rel = 'apple-touch-icon';
+                icon.href = '/app/static/icon-192.png';
+                document.head.appendChild(icon);
+            }
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/app/static/sw.js').catch(() => {});
+            }
+        }
+        """,
+    )
+
+
 def _온톨로지_그래프_컴포넌트():
     return st_components_v2.component(
         "ontology_graph",
@@ -1310,6 +1351,7 @@ _토큰 = _테마_토큰()
 상태_차트_색상 = _토큰["상태_차트_색상"]
 
 _스타일_적용()
+_PWA_컴포넌트()(data={}, height=1, key="pwa_설정")
 
 DB_준비()
 사업현황_컬럼_보강()
