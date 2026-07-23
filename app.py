@@ -1248,6 +1248,9 @@ def _스타일_적용() -> None:
             [data-testid="stMarkdownContainer"] h2 {{ font-size: 1.05rem !important; }}
             [data-testid="stMarkdownContainer"] h3 {{ font-size: 0.95rem !important; }}
 
+            /* 설명·안내용 캡션 텍스트는 모바일에서 공간 낭비이므로 전부 숨김 (데스크톱에는 그대로 유지) */
+            [data-testid="stCaptionContainer"] {{ display: none !important; }}
+
             /* 지표 카드: 패딩/글자 크기 축소 */
             [data-testid="stMetric"] {{ padding: 8px 10px; }}
             [data-testid="stMetricLabel"] {{ font-size: 10px !important; }}
