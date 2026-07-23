@@ -1407,9 +1407,25 @@ with st.popover(f"{_탭_아이콘[_저장된_탭]} {_저장된_탭}  ▾", use_c
 # 위 메뉴에서 고른 것 하나만 보여준다 — 로그인 후 기본값이 "AI 채팅"이라 이게 첫 화면이 된다.
 # 데스크톱은 이 규칙이 적용되지 않아 항상 대시보드+채팅이 나란히 보인다.
 _모바일_숨길_컬럼 = 1 if 현재_탭_선택 == "AI 채팅" else 2
+
+# "AI 채팅"이 선택된 동안은 PC에서도 왼쪽 대시보드 컬럼을 숨겨 채팅이 전체 화면을 쓰게 한다
+# (다른 탭이 선택되면 PC는 원래대로 대시보드+채팅이 나란히 보임 — 이 규칙엔 미디어쿼리가 없음).
+_PC_전체화면_채팅_CSS = ""
+if 현재_탭_선택 == "AI 채팅":
+    _PC_전체화면_채팅_CSS = """
+    .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(1) {
+        display: none !important;
+    }
+    @media (min-width: 641px) {
+        .st-key-채팅_상자 { height: 78vh !important; }
+        .st-key-채팅_상자 > div { height: 78vh !important; }
+    }
+    """
+
 st.markdown(
     f"""
     <style>
+    {_PC_전체화면_채팅_CSS}
     @media (max-width: 640px) {{
         .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"]
             > div[data-testid="stColumn"]:nth-of-type({_모바일_숨길_컬럼}) {{
