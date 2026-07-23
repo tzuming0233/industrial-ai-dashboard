@@ -9,9 +9,9 @@
 ```
 industrial_ai_dashboard/
 ├─ app.py                              # Streamlit 메인 앱 (대시보드/표/간트차트/데이터 관리/AI 채팅)
-├─ ai_agent.py                         # OpenAI API tool-use 자연어 질의
+├─ ai_agent.py                         # Anthropic API tool-use 자연어 질의
 ├─ requirements.txt                    # 필요 패키지 목록
-├─ .env.example                        # 환경변수 예시 (OPENAI_API_KEY)
+├─ .env.example                        # 환경변수 예시 (ANTHROPIC_API_KEY)
 ├─ data/
 │  └─ 실적데이터.csv                    # 예시 데이터 (가상 데이터, DB가 없을 때 초기 시드용)
 ├─ scripts/
@@ -35,7 +35,7 @@ industrial_ai_dashboard/
    ```
    pip install -r requirements.txt
    ```
-3. (AI 채팅 탭을 쓰려면) `.env.example` 을 복사해 `.env` 로 저장하고 `OPENAI_API_KEY` 값을 채워 넣기
+3. (AI 채팅 탭을 쓰려면) `.env.example` 을 복사해 `.env` 로 저장하고 `ANTHROPIC_API_KEY` 값을 채워 넣기
    (`.env` 는 git에 올리지 않습니다 — `.gitignore` 참고)
 
 ## 실행 방법

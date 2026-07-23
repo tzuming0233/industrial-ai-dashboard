@@ -1,12 +1,12 @@
 """
 산업AI팀 사업 통합관리 - AI 채팅 자연어 질의
 
-SQLite 조회 함수 1개를 OpenAI의 tool(함수 호출)로 등록해
+SQLite 조회 함수 1개를 Claude의 tool(도구 호출)로 등록해
 자연어 질의에 답한다.
 
 사용 전 준비:
     1) pip install -r requirements.txt
-    2) 환경변수 OPENAI_API_KEY 설정 (.env.example 참고)
+    2) 환경변수 ANTHROPIC_API_KEY 설정 (.env.example 참고)
 """
 
 import json
@@ -14,18 +14,18 @@ import os
 import sqlite3
 from pathlib import Path
 
+from anthropic import Anthropic
 from dotenv import load_dotenv
-from openai import OpenAI
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "db" / "실적관리.db"
 
 load_dotenv(BASE_DIR / ".env")
 
-# 필요 시 다른 모델로 교체 가능 (예: 비용을 낮추려면 gpt-5.4-mini)
-MODEL_NAME = "gpt-5.4"
+# 필요 시 다른 모델로 교체 가능
+MODEL_NAME = "claude-sonnet-5"
 # 대화 제목 생성처럼 가벼운 작업에는 더 빠르고 저렴한 모델을 쓴다.
-제목생성_MODEL_NAME = "gpt-5.4-mini"
+제목생성_MODEL_NAME = "claude-haiku-4-5-20251001"
 
 SYSTEM_PROMPT = (
     "당신은 산업AI팀 사업 통합관리 시스템의 AI 에이전트입니다. 데이터 조회/추가/수정/삭제뿐 아니라, "
@@ -77,231 +77,213 @@ SYSTEM_PROMPT = (
     "- 한 턴에 제안 도구는 한 번만 호출하세요."
 )
 
+# Anthropic의 tool input_schema는 property 키가 ^[a-zA-Z0-9_.-]{1,64}$ 패턴이어야 해서
+# (한글 키 불가) 한글 필드명을 그대로 쓰던 기존 스키마를 ASCII로 바꿨다. 실제 DB/화면 로직은
+# 여전히 한글 필드명 그대로이므로, Claude가 ASCII 키로 호출하면 _도구_실행()에서 한글 키로
+# 되돌려 기존 함수들에 넘긴다 (_ASCII_TO_한글, _사업항목_매핑, _관계항목_매핑 참고).
 TOOLS = [
     {
-        "type": "function",
-        "function": {
-            "name": "query_business_status",
-            "description": (
-                "사업현황 테이블에서 조건에 맞는 사업(계약) 목록을 조회한다. 인자를 하나도 지정하지 않으면 "
-                "전체 목록을 반환한다(요약이 아니라 전체 행 전부). 업체명이나 용역명으로 특정 사업을 찾으려면 "
-                "'검색어'를 사용하라 — 업체명·용역명 부분일치로 찾아준다. 그 외 사업구분, 구분(신규/이월), "
-                "사업단계, 담당자(PM), 종료일 범위로도 필터링할 수 있다. 결과에는 각 건의 id가 포함되며, "
-                "수정/삭제/온톨로지 관계를 제안하려면 이 id가 필요하다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "검색어": {"type": "string", "description": "업체명 또는 용역명에 포함된 단어로 검색 (부분일치)"},
-                    "사업구분": {"type": "string", "description": "예: 상생형 스마트공장, 자율형공장 컨설팅 등"},
-                    "구분": {"type": "string", "description": "예: 컨설팅_신규, 컨설팅_이월, 수탁_신규, 수탁_이월"},
-                    "사업단계": {
-                        "type": "string",
-                        "description": "예: 미분류, 사업 발굴, 수주 계획, 제안 진행, 계약 체결, 사업 수행",
-                    },
-                    "담당자": {"type": "string", "description": "이 사업을 담당하는 PM/실무자 이름"},
-                    "종료일_이전": {"type": "string", "description": "YYYY-MM-DD, 이 날짜 이전에 종료되는 건만"},
-                    "종료일_이후": {"type": "string", "description": "YYYY-MM-DD, 이 날짜 이후에 종료되는 건만"},
+        "name": "query_business_status",
+        "description": (
+            "사업현황 테이블에서 조건에 맞는 사업(계약) 목록을 조회한다. 인자를 하나도 지정하지 않으면 "
+            "전체 목록을 반환한다(요약이 아니라 전체 행 전부). 업체명이나 용역명으로 특정 사업을 찾으려면 "
+            "'query'를 사용하라 — 업체명·용역명 부분일치로 찾아준다. 그 외 사업구분(category), "
+            "구분/신규·이월(type), 사업단계(stage), 담당자/PM(manager), 종료일 범위로도 필터링할 수 있다. "
+            "결과에는 각 건의 id가 포함되며(결과는 한글 필드명: 구분/업체명/용역명/사업구분/담당자/"
+            "주관참여구분/사업단계/진행률/시작일/종료일/계약금액/기수입금액/당해년도수입금액), "
+            "수정/삭제/온톨로지 관계를 제안하려면 이 id가 필요하다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "업체명 또는 용역명에 포함된 단어로 검색 (부분일치)"},
+                "category": {"type": "string", "description": "사업구분. 예: 상생형 스마트공장, 자율형공장 컨설팅 등"},
+                "type": {"type": "string", "description": "구분(신규/이월). 예: 컨설팅_신규, 컨설팅_이월, 수탁_신규, 수탁_이월"},
+                "stage": {
+                    "type": "string",
+                    "description": "사업단계. 예: 미분류, 사업 발굴, 수주 계획, 제안 진행, 계약 체결, 사업 수행",
                 },
+                "manager": {"type": "string", "description": "이 사업을 담당하는 PM/실무자 이름"},
+                "end_before": {"type": "string", "description": "YYYY-MM-DD, 이 날짜 이전에 종료되는 건만"},
+                "end_after": {"type": "string", "description": "YYYY-MM-DD, 이 날짜 이후에 종료되는 건만"},
             },
         },
     },
     {
-        "type": "function",
-        "function": {
-            "name": "search_past_conversations",
-            "description": (
-                "이 시스템에서 나눈 모든 과거 대화(현재 보이는 대화창뿐 아니라 사용자가 만들었던 다른 "
-                "대화창, 그리고 지금 대화에서 화면에 보이는 범위보다 더 오래된 부분까지 전부)에서 키워드로 "
-                "텍스트를 검색한다. 사용자가 예전에 나눈 대화 내용을 참조할 때 사용한다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "검색어": {"type": "string", "description": "찾고자 하는 키워드나 문구"},
-                },
-                "required": ["검색어"],
+        "name": "search_past_conversations",
+        "description": (
+            "이 시스템에서 나눈 모든 과거 대화(현재 보이는 대화창뿐 아니라 사용자가 만들었던 다른 "
+            "대화창, 그리고 지금 대화에서 화면에 보이는 범위보다 더 오래된 부분까지 전부)에서 키워드로 "
+            "텍스트를 검색한다. 사용자가 예전에 나눈 대화 내용을 참조할 때 사용한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "찾고자 하는 키워드나 문구"},
             },
+            "required": ["query"],
         },
     },
     {
-        "type": "function",
-        "function": {
-            "name": "import_uploaded_file_as_data",
-            "description": (
-                "지금 대화에 첨부된 엑셀/CSV 파일의 내용을 사업현황 데이터로 추가하자고 제안한다. "
-                "사용자가 이 파일을 검토·분석해달라는 것이 아니라 실제로 데이터로 반영/등록하길 원한다고 "
-                "판단될 때만 호출하라. 실제 컬럼 매핑과 값 정리는 시스템이 별도로 처리하며, 사용자 확인 "
-                "후에만 반영된다."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
+        "name": "import_uploaded_file_as_data",
+        "description": (
+            "지금 대화에 첨부된 엑셀/CSV 파일의 내용을 사업현황 데이터로 추가하자고 제안한다. "
+            "사용자가 이 파일을 검토·분석해달라는 것이 아니라 실제로 데이터로 반영/등록하길 원한다고 "
+            "판단될 때만 호출하라. 실제 컬럼 매핑과 값 정리는 시스템이 별도로 처리하며, 사용자 확인 "
+            "후에만 반영된다."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
-        "type": "function",
-        "function": {
-            "name": "propose_add_business",
-            "description": (
-                "새 사업(계약) 1건 이상을 추가하자고 제안한다. 실제로 저장하지 않고 화면에 "
-                "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "사업목록": {
-                        "type": "array",
-                        "description": "추가할 사업 목록. 각 항목은 아래 필드를 최대한 채워서 전달한다.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "구분": {"type": "string"},
-                                "업체명": {"type": "string"},
-                                "용역명": {"type": "string"},
-                                "사업구분": {"type": "string"},
-                                "담당자": {"type": "string", "description": "이 사업의 과제 책임자 1명"},
-                                "주관참여구분": {"type": "string", "description": "'주관' 또는 '참여' 중 하나"},
-                                "사업단계": {
-                                    "type": "string",
-                                    "description": "미분류/사업 발굴/수주 계획/제안 진행/계약 체결/사업 수행 중 하나",
-                                },
-                                "진행률": {"type": "number"},
-                                "시작일": {"type": "string", "description": "YYYY-MM-DD"},
-                                "종료일": {"type": "string", "description": "YYYY-MM-DD"},
-                                "계약금액": {"type": "number"},
-                                "기수입금액": {"type": "number"},
-                                "당해년도수입금액": {"type": "number"},
-                            },
-                        },
-                    }
-                },
-                "required": ["사업목록"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "propose_update_business",
-            "description": (
-                "기존 사업(계약) 1건의 특정 필드를 수정하자고 제안한다. 실제로 저장하지 않고 "
-                "화면에 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. id는 반드시 "
-                "query_business_status로 먼저 조회해 확인한 값을 사용해야 한다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer", "description": "수정할 사업의 id (query_business_status 결과에서 확인)"},
-                    "변경필드": {
+        "name": "propose_add_business",
+        "description": (
+            "새 사업(계약) 1건 이상을 추가하자고 제안한다. 실제로 저장하지 않고 화면에 "
+            "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "business_list": {
+                    "type": "array",
+                    "description": "추가할 사업 목록. 각 항목은 아래 필드를 최대한 채워서 전달한다.",
+                    "items": {
                         "type": "object",
-                        "description": "필드명: 새 값 쌍. 예: {\"사업단계\": \"사업 수행\", \"진행률\": 100}",
-                    },
-                },
-                "required": ["id", "변경필드"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "propose_delete_business",
-            "description": (
-                "기존 사업(계약) 1건 이상을 삭제하자고 제안한다. 실제로 삭제하지 않고 화면에 "
-                "삭제 대상 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. id는 반드시 "
-                "query_business_status로 먼저 조회해 확인한 값을 사용해야 한다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ids": {"type": "array", "items": {"type": "integer"}, "description": "삭제할 사업 id 목록"},
-                },
-                "required": ["ids"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "propose_add_relations",
-            "description": (
-                "사업들 사이, 또는 사업과 개념(고객사/기술/담당자/산업분야 등) 사이의 관계(온톨로지 엣지)를 "
-                "하나 이상 추가하자고 제안한다. 실제로 저장하지 않고 화면에 미리보기를 띄워 사용자 확인을 "
-                "받기 위한 제안만 만든다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "관계목록": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "노드1_유형": {
-                                    "type": "string",
-                                    "description": "'사업'이면 노드1_사업_id를 채운다. 아니면 자유 개념 유형(예: 고객사, 기술, 담당자, 산업분야)",
-                                },
-                                "노드1_사업_id": {
-                                    "type": "integer",
-                                    "description": "노드1_유형이 '사업'일 때, query_business_status로 확인한 정확한 id",
-                                },
-                                "노드1_이름": {
-                                    "type": "string",
-                                    "description": (
-                                        "노드1_유형이 '사업'이 아니면 필수. '사업'이면 생략 가능(자동으로 용역명 "
-                                        "사용). 직접 채운다면 업체명이 아니라 사업명/용역명을 사용할 것 — 같은 "
-                                        "업체가 여러 사업을 진행할 수 있어 업체명만으로는 사업이 구분되지 않는다."
-                                    ),
-                                },
-                                "노드2_유형": {"type": "string", "description": "노드1_유형과 동일한 규칙"},
-                                "노드2_사업_id": {"type": "integer"},
-                                "노드2_이름": {"type": "string", "description": "노드1_이름과 동일한 규칙(업체명이 아닌 사업명/용역명 사용)"},
-                                "관계유형": {
-                                    "type": "string",
-                                    "description": "예: 후속사업, 선행사업, 동일고객, 유사기술, 협력, 경쟁, 재사용 등 자유 텍스트",
-                                },
-                                "설명": {"type": "string", "description": "관계에 대한 부가 설명(선택)"},
+                        "properties": {
+                            "type": {"type": "string", "description": "구분(신규/이월 등)"},
+                            "company": {"type": "string", "description": "업체명"},
+                            "project_name": {"type": "string", "description": "용역명"},
+                            "category": {"type": "string", "description": "사업구분"},
+                            "manager": {"type": "string", "description": "담당자 — 이 사업의 과제 책임자 1명"},
+                            "role_type": {"type": "string", "description": "주관참여구분 — '주관' 또는 '참여' 중 하나"},
+                            "stage": {
+                                "type": "string",
+                                "description": "사업단계 — 미분류/사업 발굴/수주 계획/제안 진행/계약 체결/사업 수행 중 하나",
                             },
-                            "required": ["노드1_유형", "노드2_유형", "관계유형"],
+                            "progress": {"type": "number", "description": "진행률(%)"},
+                            "start_date": {"type": "string", "description": "시작일, YYYY-MM-DD"},
+                            "end_date": {"type": "string", "description": "종료일, YYYY-MM-DD"},
+                            "contract_amount": {"type": "number", "description": "계약금액"},
+                            "received_amount": {"type": "number", "description": "기수입금액"},
+                            "this_year_amount": {"type": "number", "description": "당해년도수입금액"},
                         },
-                    }
+                    },
+                }
+            },
+            "required": ["business_list"],
+        },
+    },
+    {
+        "name": "propose_update_business",
+        "description": (
+            "기존 사업(계약) 1건의 특정 필드를 수정하자고 제안한다. 실제로 저장하지 않고 "
+            "화면에 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. id는 반드시 "
+            "query_business_status로 먼저 조회해 확인한 값을 사용해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer", "description": "수정할 사업의 id (query_business_status 결과에서 확인)"},
+                "changes": {
+                    "type": "object",
+                    "description": (
+                        "한글 필드명: 새 값 쌍(이 안의 키는 한글 그대로 사용, ASCII 변환 대상 아님). "
+                        "예: {\"사업단계\": \"사업 수행\", \"진행률\": 100}"
+                    ),
                 },
-                "required": ["관계목록"],
+            },
+            "required": ["id", "changes"],
+        },
+    },
+    {
+        "name": "propose_delete_business",
+        "description": (
+            "기존 사업(계약) 1건 이상을 삭제하자고 제안한다. 실제로 삭제하지 않고 화면에 "
+            "삭제 대상 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. id는 반드시 "
+            "query_business_status로 먼저 조회해 확인한 값을 사용해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "integer"}, "description": "삭제할 사업 id 목록"},
+            },
+            "required": ["ids"],
+        },
+    },
+    {
+        "name": "propose_add_relations",
+        "description": (
+            "사업들 사이, 또는 사업과 개념(고객사/기술/담당자/산업분야 등) 사이의 관계(온톨로지 엣지)를 "
+            "하나 이상 추가하자고 제안한다. 실제로 저장하지 않고 화면에 미리보기를 띄워 사용자 확인을 "
+            "받기 위한 제안만 만든다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "node1_type": {
+                                "type": "string",
+                                "description": "'사업'이면 node1_business_id를 채운다. 아니면 자유 개념 유형(예: 고객사, 기술, 담당자, 산업분야)",
+                            },
+                            "node1_business_id": {
+                                "type": "integer",
+                                "description": "node1_type이 '사업'일 때, query_business_status로 확인한 정확한 id",
+                            },
+                            "node1_name": {
+                                "type": "string",
+                                "description": (
+                                    "node1_type이 '사업'이 아니면 필수. '사업'이면 생략 가능(자동으로 용역명 "
+                                    "사용). 직접 채운다면 업체명이 아니라 사업명/용역명을 사용할 것 — 같은 "
+                                    "업체가 여러 사업을 진행할 수 있어 업체명만으로는 사업이 구분되지 않는다."
+                                ),
+                            },
+                            "node2_type": {"type": "string", "description": "node1_type과 동일한 규칙"},
+                            "node2_business_id": {"type": "integer"},
+                            "node2_name": {"type": "string", "description": "node1_name과 동일한 규칙(업체명이 아닌 사업명/용역명 사용)"},
+                            "relation_type": {
+                                "type": "string",
+                                "description": "예: 후속사업, 선행사업, 동일고객, 유사기술, 협력, 경쟁, 재사용 등 자유 텍스트",
+                            },
+                            "description": {"type": "string", "description": "관계에 대한 부가 설명(선택)"},
+                        },
+                        "required": ["node1_type", "node2_type", "relation_type"],
+                    },
+                }
+            },
+            "required": ["relations"],
+        },
+    },
+    {
+        "name": "query_ontology",
+        "description": (
+            "온톨로지(사업/개념 간 관계)에 이미 등록된 관계를 조회한다. 검색어를 지정하면 관련된 노드 이름, "
+            "관계유형, 설명에서 부분일치로 찾아준다. 검색어 없이 호출하면 전체 관계를 반환한다. 새 관계를 "
+            "제안하기 전에 이미 같은 관계가 있는지 확인하거나, 사용자가 '이 사업이랑 연결된 게 뭐야?' 같은 "
+            "질문을 할 때 사용한다. 결과에는 각 관계의 id가 포함되며, 삭제를 제안하려면 이 id가 필요하다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "노드 이름, 관계유형, 설명에서 찾을 키워드(선택)"},
             },
         },
     },
     {
-        "type": "function",
-        "function": {
-            "name": "query_ontology",
-            "description": (
-                "온톨로지(사업/개념 간 관계)에 이미 등록된 관계를 조회한다. 검색어를 지정하면 관련된 노드 이름, "
-                "관계유형, 설명에서 부분일치로 찾아준다. 검색어 없이 호출하면 전체 관계를 반환한다. 새 관계를 "
-                "제안하기 전에 이미 같은 관계가 있는지 확인하거나, 사용자가 '이 사업이랑 연결된 게 뭐야?' 같은 "
-                "질문을 할 때 사용한다. 결과에는 각 관계의 id가 포함되며, 삭제를 제안하려면 이 id가 필요하다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "검색어": {"type": "string", "description": "노드 이름, 관계유형, 설명에서 찾을 키워드(선택)"},
-                },
+        "name": "propose_delete_relations",
+        "description": (
+            "온톨로지에 등록된 관계(엣지) 1건 이상을 삭제하자고 제안한다. 실제로 삭제하지 않고 화면에 "
+            "삭제 대상 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. 관계 id는 반드시 "
+            "query_ontology로 먼저 조회해 확인한 값을 사용해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "relation_ids": {"type": "array", "items": {"type": "integer"}, "description": "삭제할 관계 id 목록"},
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "propose_delete_relations",
-            "description": (
-                "온톨로지에 등록된 관계(엣지) 1건 이상을 삭제하자고 제안한다. 실제로 삭제하지 않고 화면에 "
-                "삭제 대상 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. 관계 id는 반드시 "
-                "query_ontology로 먼저 조회해 확인한 값을 사용해야 한다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "관계_id_목록": {"type": "array", "items": {"type": "integer"}, "description": "삭제할 관계 id 목록"},
-                },
-                "required": ["관계_id_목록"],
-            },
+            "required": ["relation_ids"],
         },
     },
 ]
@@ -310,6 +292,11 @@ TOOLS = [
     "propose_add_business", "propose_update_business", "propose_delete_business", "propose_add_relations",
     "import_uploaded_file_as_data", "propose_delete_relations",
 }
+
+
+def _텍스트_추출(response) -> str:
+    """Anthropic 응답의 content 블록들 중 text 타입만 이어붙인다."""
+    return "".join(block.text for block in response.content if block.type == "text")
 
 
 def 조회_사업현황(
@@ -431,6 +418,47 @@ def propose_delete_relations(관계_id_목록: list[int]) -> dict:
     return {"확인": f"{len(관계_id_목록)}개 관계 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
+_상위_키_매핑 = {
+    "query_business_status": {
+        "query": "검색어", "category": "사업구분", "type": "구분", "stage": "사업단계",
+        "manager": "담당자", "end_before": "종료일_이전", "end_after": "종료일_이후",
+    },
+    "search_past_conversations": {"query": "검색어"},
+    "propose_add_business": {"business_list": "사업목록"},
+    "propose_update_business": {"changes": "변경필드"},
+    "propose_add_relations": {"relations": "관계목록"},
+    "query_ontology": {"query": "검색어"},
+    "propose_delete_relations": {"relation_ids": "관계_id_목록"},
+}
+
+_사업항목_키_매핑 = {
+    "type": "구분", "company": "업체명", "project_name": "용역명", "category": "사업구분",
+    "manager": "담당자", "role_type": "주관참여구분", "stage": "사업단계", "progress": "진행률",
+    "start_date": "시작일", "end_date": "종료일", "contract_amount": "계약금액",
+    "received_amount": "기수입금액", "this_year_amount": "당해년도수입금액",
+}
+
+_관계항목_키_매핑 = {
+    "node1_type": "노드1_유형", "node1_business_id": "노드1_사업_id", "node1_name": "노드1_이름",
+    "node2_type": "노드2_유형", "node2_business_id": "노드2_사업_id", "node2_name": "노드2_이름",
+    "relation_type": "관계유형", "description": "설명",
+}
+
+
+def _키_변환(항목: dict, 매핑: dict) -> dict:
+    return {매핑.get(k, k): v for k, v in 항목.items()}
+
+
+def _도구_인자_한글화(name: str, tool_input: dict) -> dict:
+    """Claude가 ASCII 키로 보낸 tool 인자를 기존 로직이 쓰는 한글 키로 되돌린다."""
+    변환됨 = _키_변환(tool_input, _상위_키_매핑.get(name, {}))
+    if name == "propose_add_business":
+        변환됨["사업목록"] = [_키_변환(항목, _사업항목_키_매핑) for 항목 in 변환됨.get("사업목록", [])]
+    elif name == "propose_add_relations":
+        변환됨["관계목록"] = [_키_변환(항목, _관계항목_키_매핑) for 항목 in 변환됨.get("관계목록", [])]
+    return 변환됨
+
+
 def _도구_실행(name: str, tool_input: dict):
     if name == "query_business_status":
         return 조회_사업현황(**tool_input)
@@ -476,17 +504,17 @@ def 업로드_매핑_추론(원본_컬럼들: list[str], 샘플_행들: list[dic
     금액/날짜 등 실제 값은 여기서 다루지 않는다(수치 오기 위험) — 어느 원본 컬럼이
     어떤 필드에 해당하는지, 그리고 사업단계 표현을 어떻게 표준값으로 바꿀지만 판단시킨다.
     """
-    key = api_key or os.environ.get("OPENAI_API_KEY")
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         try:
             import streamlit as st
-            key = st.secrets.get("OPENAI_API_KEY")
+            key = st.secrets.get("ANTHROPIC_API_KEY")
         except Exception:
             key = None
     if not key:
-        return {"오류": "OPENAI_API_KEY가 설정되어 있지 않습니다."}
+        return {"오류": "ANTHROPIC_API_KEY가 설정되어 있지 않습니다."}
 
-    client = OpenAI(api_key=key)
+    client = Anthropic(api_key=key)
     프롬프트 = f"""다음은 사용자가 업로드한 엑셀/CSV의 컬럼명과 샘플 데이터입니다.
 컬럼명이나 순서가 우리 시스템 형식과 다를 수 있습니다.
 
@@ -504,35 +532,36 @@ def 업로드_매핑_추론(원본_컬럼들: list[str], 샘플_행들: list[dic
 "사업단계_값매핑" 딕셔너리도 함께 만드세요 (예: "진행중" -> "사업 수행", "제안중" -> "제안 진행").
 확신이 없으면 "미분류"로 매핑하세요 — 예전 값과 이 5단계는 정확히 대응하지 않을 수 있습니다.
 
-다른 설명 없이 아래 JSON 형식으로만 답하세요:
+다른 설명 없이 아래 JSON 형식으로만 답하세요(코드블록 없이 JSON만):
 {{"매핑": {{"구분": "원본컬럼명 또는 null", "업체명": "...", ...}}, "사업단계_값매핑": {{"원본표현": "표준값"}}}}"""
 
-    response = client.chat.completions.create(
+    response = client.messages.create(
         model=MODEL_NAME,
+        max_tokens=2048,
         messages=[{"role": "user", "content": 프롬프트}],
-        response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(_텍스트_추출(response).strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
 
 
 def 대화_제목_생성(첫_메시지: str, api_key: str | None = None) -> str:
     """대화의 첫 메시지를 짧은 제목으로 요약한다. 실패하면 원문을 잘라 그대로 돌려준다."""
     기본_제목 = 첫_메시지.strip().splitlines()[0][:30] if 첫_메시지.strip() else "새 대화"
 
-    key = api_key or os.environ.get("OPENAI_API_KEY")
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         try:
             import streamlit as st
-            key = st.secrets.get("OPENAI_API_KEY")
+            key = st.secrets.get("ANTHROPIC_API_KEY")
         except Exception:
             key = None
     if not key:
         return 기본_제목
 
     try:
-        client = OpenAI(api_key=key)
-        response = client.chat.completions.create(
+        client = Anthropic(api_key=key)
+        response = client.messages.create(
             model=제목생성_MODEL_NAME,
+            max_tokens=30,
             messages=[
                 {
                     "role": "user",
@@ -543,16 +572,15 @@ def 대화_제목_생성(첫_메시지: str, api_key: str | None = None) -> str:
                     ),
                 }
             ],
-            max_completion_tokens=30,
         )
-        제목 = (response.choices[0].message.content or "").strip().strip('"').strip("'")
+        제목 = _텍스트_추출(response).strip().strip('"').strip("'")
         return 제목 or 기본_제목
     except Exception:
         return 기본_제목
 
 
 def 질의하기(question: str, history: list[dict] | None = None, api_key: str | None = None) -> dict:
-    """자연어 질문 -> GPT가 SQLite를 조회하거나 변경을 제안하며 답변 생성
+    """자연어 질문 -> Claude가 SQLite를 조회하거나 변경을 제안하며 답변 생성
 
     history: [{"role": "user"/"assistant", "content": "..."}] 형태의 이전 대화 이력.
     도구 호출 내역은 이번 턴 안에서만 쓰고 반환값에는 포함하지 않는다.
@@ -560,49 +588,50 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
     반환값: {"text": 답변 문자열, "pending_action": {"유형": 도구명, "인자": {...}} 또는 None}
     pending_action은 실제로 반영된 것이 아니라 사용자 확인이 필요한 제안이다.
     """
-    key = api_key or os.environ.get("OPENAI_API_KEY")
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         try:
             import streamlit as st
-            key = st.secrets.get("OPENAI_API_KEY")
+            key = st.secrets.get("ANTHROPIC_API_KEY")
         except Exception:
             key = None
     if not key:
         return {
-            "text": "OPENAI_API_KEY가 설정되어 있지 않습니다. .env 파일(로컬) 또는 Streamlit Cloud의 Secrets 설정을 확인하세요.",
+            "text": "ANTHROPIC_API_KEY가 설정되어 있지 않습니다. .env 파일(로컬) 또는 Streamlit Cloud의 Secrets 설정을 확인하세요.",
             "pending_action": None,
         }
 
-    client = OpenAI(api_key=key)
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(history or []) + [
-        {"role": "user", "content": question}
-    ]
+    client = Anthropic(api_key=key)
+    messages = list(history or []) + [{"role": "user", "content": question}]
 
     대기중_제안 = None
     for _ in range(5):  # 도구 호출 반복 상한
-        response = client.chat.completions.create(
+        response = client.messages.create(
             model=MODEL_NAME,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
             messages=messages,
             tools=TOOLS,
         )
-        message = response.choices[0].message
 
-        if not message.tool_calls:
-            return {"text": message.content or "", "pending_action": 대기중_제안}
+        if response.stop_reason != "tool_use":
+            return {"text": _텍스트_추출(response), "pending_action": 대기중_제안}
 
-        messages.append(message)
+        messages.append({"role": "assistant", "content": response.content})
 
-        for tool_call in message.tool_calls:
-            도구_인자 = json.loads(tool_call.function.arguments or "{}")
-            결과 = _도구_실행(tool_call.function.name, 도구_인자)
-            if tool_call.function.name in 제안_도구명들:
-                대기중_제안 = {"유형": tool_call.function.name, "인자": 도구_인자}
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(결과, ensure_ascii=False),
-                }
-            )
+        결과_블록들 = []
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+            도구_인자 = _도구_인자_한글화(block.name, block.input or {})
+            결과 = _도구_실행(block.name, 도구_인자)
+            if block.name in 제안_도구명들:
+                대기중_제안 = {"유형": block.name, "인자": 도구_인자}
+            결과_블록들.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": json.dumps(결과, ensure_ascii=False),
+            })
+        messages.append({"role": "user", "content": 결과_블록들})
 
     return {"text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.", "pending_action": 대기중_제안}
