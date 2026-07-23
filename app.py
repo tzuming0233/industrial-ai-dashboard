@@ -1403,42 +1403,30 @@ with st.popover(f"{_탭_아이콘[_저장된_탭]} {_저장된_탭}  ▾", use_c
         format_func=lambda x: f"{_탭_아이콘[x]}  {x}", label_visibility="collapsed",
     )
 
-# 모바일(640px 이하)에서는 대시보드류 화면과 AI 채팅을 동시에 쌓아 보여주지 않고
-# 위 메뉴에서 고른 것 하나만 보여준다 — 로그인 후 기본값이 "AI 채팅"이라 이게 첫 화면이 된다.
-# 데스크톱은 이 규칙이 적용되지 않아 항상 대시보드+채팅이 나란히 보인다.
-_모바일_숨길_컬럼 = 1 if 현재_탭_선택 == "AI 채팅" else 2
-
-# "AI 채팅"이 선택된 동안은 PC에서도 왼쪽 대시보드 컬럼을 숨겨 채팅이 전체 화면을 쓰게 한다
-# (다른 탭이 선택되면 PC는 원래대로 대시보드+채팅이 나란히 보임 — 이 규칙엔 미디어쿼리가 없음).
-_PC_전체화면_채팅_CSS = ""
+# "AI 채팅"이 선택되면 컬럼 분할 자체를 하지 않고 같은 컨테이너를 재사용해 화면 전체 폭을
+# 쓰게 한다 — CSS로 컬럼을 숨기는 방식은 데스크톱 flex 레이아웃에서 남은 컬럼이 폭을 채우지
+# 않는 문제가 있어(모바일은 세로로 쌓여서 문제 없었음), 애초에 컬럼을 안 만드는 쪽으로 바꿨다.
 if 현재_탭_선택 == "AI 채팅":
-    _PC_전체화면_채팅_CSS = """
-    .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-of-type(1) {
-        display: none !important;
-    }
-    @media (min-width: 641px) {
-        .st-key-채팅_상자 { height: 78vh !important; }
-        .st-key-채팅_상자 > div { height: 78vh !important; }
-    }
-    """
-
-st.markdown(
-    f"""
-    <style>
-    {_PC_전체화면_채팅_CSS}
-    @media (max-width: 640px) {{
-        .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"]
-            > div[data-testid="stColumn"]:nth-of-type({_모바일_숨길_컬럼}) {{
-            display: none !important;
-        }}
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-본문_레이아웃 = st.container(key="본문_레이아웃")
-메인_영역, 채팅_영역 = 본문_레이아웃.columns([7, 3], gap="medium")
+    메인_영역 = st.container()
+    채팅_영역 = 메인_영역
+else:
+    본문_레이아웃 = st.container(key="본문_레이아웃")
+    메인_영역, 채팅_영역 = 본문_레이아웃.columns([7, 3], gap="medium")
+    # 모바일(640px 이하)에서는 대시보드류 화면과 채팅을 동시에 쌓아 보여주지 않고
+    # 메뉴에서 고른 화면(이 분기는 AI 채팅이 아닐 때만 오므로 항상 대시보드 쪽)만 보여준다.
+    st.markdown(
+        """
+        <style>
+        @media (max-width: 640px) {
+            .st-key-본문_레이아웃 > div[data-testid="stHorizontalBlock"]
+                > div[data-testid="stColumn"]:nth-of-type(2) {
+                display: none !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 with 메인_영역:
     if 현재_탭_선택 == "AI 채팅":
@@ -2098,7 +2086,8 @@ with 채팅_영역:
             st.session_state.pop("삭제확인_대화id", None)
             st.rerun()
 
-    채팅_컨테이너 = st.container(height=480, border=True, key="채팅_상자")
+    채팅_높이 = 700 if 현재_탭_선택 == "AI 채팅" else 480
+    채팅_컨테이너 = st.container(height=채팅_높이, border=True, key="채팅_상자")
     이전_기록 = 채팅기록_불러오기(현재_대화_id)
     with 채팅_컨테이너:
         if not 이전_기록:
