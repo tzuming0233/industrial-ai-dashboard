@@ -1274,6 +1274,37 @@ def _스타일_적용() -> None:
         [data-testid="stMetric"] {{ padding: 12px 14px; }}
         [data-testid="stMetricValue"] {{ font-size: 1.5rem !important; }}
 
+        /* AI 채팅: 메신저 앱처럼 — 내 메시지는 오른쪽 말풍선, AI 답변은 왼쪽 말풍선 */
+        [data-testid="stChatMessage"] {{
+            display: flex !important;
+            gap: 8px;
+        }}
+        [data-testid="stChatMessage"] [data-testid="stChatMessageContent"] {{
+            flex: 0 1 auto !important;
+            max-width: 75%;
+            width: fit-content;
+            border-radius: 16px;
+            padding: 8px 14px;
+            background: {카드_배경};
+            border: 1px solid {테두리색};
+        }}
+        /* 내 메시지(user): 아바타까지 오른쪽으로 몰아서 완전히 우측 정렬 + 색 채운 말풍선 */
+        [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{
+            flex-direction: row-reverse !important;
+        }}
+        [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {{
+            margin-left: auto;
+            background: {전기블루};
+            border: none;
+        }}
+        [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] p,
+        [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] * {{
+            color: #FFFFFF !important;
+        }}
+        [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageAvatarUser"] {{
+            display: none;
+        }}
+
         /* 모바일 화면: 전체적으로 더 촘촘하게 — Claude 모바일 앱 정도의 여백/크기 밀도를 목표로 함 */
         @media (max-width: 640px) {{
             .dc-topbar {{ padding: 14px 16px !important; }}
