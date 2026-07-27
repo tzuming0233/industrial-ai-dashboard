@@ -1290,14 +1290,17 @@ def _스타일_적용() -> None:
         }}
         [data-testid="stChatMessage"] {{
             display: flex !important;
-            width: 100%;
+            width: 100% !important;
             justify-content: flex-start !important;
             gap: 8px;
         }}
+        /* 스트림릿 기본 margin:0 auto류의 가운데 정렬 마진을 명시적으로 0으로 되돌린다 —
+           예전엔 말풍선 폭이 100%라 여백이 없어서 안 보였을 뿐, 폭을 줄이자 드러났다. */
         [data-testid="stChatMessage"] [data-testid="stChatMessageContent"] {{
             flex: 0 1 auto !important;
             max-width: 75%;
             width: fit-content;
+            margin: 0 !important;
             border-radius: 16px;
             padding: 8px 14px;
             background: {카드_배경};
@@ -1309,7 +1312,8 @@ def _스타일_적용() -> None:
             justify-content: flex-end !important;
         }}
         [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {{
-            margin-left: auto;
+            margin: 0 !important;
+            margin-left: auto !important;
             background: {전기블루};
             border: none;
         }}
