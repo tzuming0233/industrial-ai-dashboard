@@ -1409,6 +1409,19 @@ with st.popover(f"{_탭_아이콘[_저장된_탭]} {_저장된_탭}  ▾", use_c
 if 현재_탭_선택 == "AI 채팅":
     메인_영역 = st.container()
     채팅_영역 = 메인_영역
+    # AI 채팅 탭에서는 채팅창을 화면 높이에 맞춰 크게 — 고정 700px는 큰 모니터에서 아래쪽이
+    # 허전해 보여서, 데스크톱(폭 641px 이상)에서는 뷰포트 높이 기준으로 꽉 채운다.
+    st.markdown(
+        """
+        <style>
+        @media (min-width: 641px) {
+            .st-key-채팅_상자 { height: calc(100vh - 260px) !important; min-height: 560px; }
+            .st-key-채팅_상자 > div { height: calc(100vh - 260px) !important; min-height: 560px; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 else:
     본문_레이아웃 = st.container(key="본문_레이아웃")
     메인_영역, 채팅_영역 = 본문_레이아웃.columns([7, 3], gap="medium")
@@ -2086,7 +2099,7 @@ with 채팅_영역:
             st.session_state.pop("삭제확인_대화id", None)
             st.rerun()
 
-    채팅_높이 = 700 if 현재_탭_선택 == "AI 채팅" else 480
+    채팅_높이 = 900 if 현재_탭_선택 == "AI 채팅" else 480
     채팅_컨테이너 = st.container(height=채팅_높이, border=True, key="채팅_상자")
     이전_기록 = 채팅기록_불러오기(현재_대화_id)
     with 채팅_컨테이너:
