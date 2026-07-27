@@ -1275,6 +1275,13 @@ def _스타일_적용() -> None:
         [data-testid="stMetricValue"] {{ font-size: 1.5rem !important; }}
 
         /* AI 채팅: 메신저 앱처럼 — 내 메시지는 오른쪽 말풍선, AI 답변은 왼쪽 말풍선 */
+        /* 채팅 목록을 담은 세로 flex 컨테이너의 기본 align-items:center 때문에 말풍선 폭을
+           줄이자 전부 가운데로 몰렸다 — stretch로 되돌려 각 메시지 행이 폭 전체를 쓰게 한다.
+           (키 이름의 한글이 실제 DOM에서는 "st-key-채팅_상자"로 그대로 남지 않고 깨진 클래스로
+           바뀌어 매칭이 안 됐던 것으로 보여, 대신 실제 DOM에서 확인된 이 속성으로 지정한다.) */
+        [data-testid="stVerticalBlock"][data-test-scroll-behavior="scroll-to-bottom"] {{
+            align-items: stretch !important;
+        }}
         [data-testid="stChatMessage"] {{
             display: flex !important;
             width: 100%;
@@ -1347,8 +1354,7 @@ def _스타일_적용() -> None:
             .ont-graph-container {{ height: 300px !important; }}
 
             /* AI 채팅창도 화면 높이에 맞게 축소 */
-            .st-key-채팅_상자 {{ height: 380px !important; }}
-            .st-key-채팅_상자 > div {{ height: 380px !important; }}
+            [data-testid="stVerticalBlock"][data-test-scroll-behavior="scroll-to-bottom"] {{ height: 380px !important; }}
         }}
         </style>
         """,
@@ -1449,8 +1455,10 @@ if 현재_탭_선택 == "AI 채팅":
         """
         <style>
         @media (min-width: 641px) {
-            .st-key-채팅_상자 { height: calc(100vh - 260px) !important; min-height: 560px; }
-            .st-key-채팅_상자 > div { height: calc(100vh - 260px) !important; min-height: 560px; }
+            [data-testid="stVerticalBlock"][data-test-scroll-behavior="scroll-to-bottom"] {
+                height: calc(100vh - 260px) !important;
+                min-height: 560px;
+            }
         }
         </style>
         """,
