@@ -1277,6 +1277,8 @@ def _스타일_적용() -> None:
         /* AI 채팅: 메신저 앱처럼 — 내 메시지는 오른쪽 말풍선, AI 답변은 왼쪽 말풍선 */
         [data-testid="stChatMessage"] {{
             display: flex !important;
+            width: 100%;
+            justify-content: flex-start !important;
             gap: 8px;
         }}
         [data-testid="stChatMessage"] [data-testid="stChatMessageContent"] {{
@@ -1291,6 +1293,7 @@ def _스타일_적용() -> None:
         /* 내 메시지(user): 아바타까지 오른쪽으로 몰아서 완전히 우측 정렬 + 색 채운 말풍선 */
         [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{
             flex-direction: row-reverse !important;
+            justify-content: flex-end !important;
         }}
         [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {{
             margin-left: auto;
