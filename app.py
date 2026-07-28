@@ -212,6 +212,11 @@ def 채팅_DB_준비():
                     ("이전 대화", 지금, 지금),
                 )
                 conn.execute("UPDATE 채팅기록 SET 대화_id = ? WHERE 대화_id IS NULL", (cur.lastrowid,))
+        # Claude 프로젝트처럼, 대화를 사업현황의 특정 사업과 1:1로 묶을 수 있게 하는 연결 컬럼.
+        # NULL이면 특정 사업과 무관한 일반 대화.
+        기존_대화_컬럼 = {row[1] for row in conn.execute("PRAGMA table_info(대화)")}
+        if "사업_id" not in 기존_대화_컬럼:
+            conn.execute("ALTER TABLE 대화 ADD COLUMN 사업_id INTEGER")
         conn.commit()
     finally:
         conn.close()
@@ -513,20 +518,20 @@ def 대화_목록_불러오기() -> list[dict]:
     try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, 제목, 생성일시, 마지막_활동일시 FROM 대화 ORDER BY 마지막_활동일시 DESC"
+            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id FROM 대화 ORDER BY 마지막_활동일시 DESC"
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
 
 
-def 대화_생성() -> int:
+def 대화_생성(사업_id: int | None = None) -> int:
     conn = sqlite3.connect(DB_PATH)
     try:
         지금 = _dt.datetime.now().isoformat(timespec="seconds")
         cur = conn.execute(
-            "INSERT INTO 대화 (제목, 생성일시, 마지막_활동일시) VALUES (?, ?, ?)",
-            (None, 지금, 지금),
+            "INSERT INTO 대화 (제목, 생성일시, 마지막_활동일시, 사업_id) VALUES (?, ?, ?, ?)",
+            (None, 지금, 지금, 사업_id),
         )
         conn.commit()
         return cur.lastrowid
@@ -2110,6 +2115,18 @@ with 채팅_영역:
         대화_목록 = 대화_목록_불러오기()
     대화_id_리스트 = [d["id"] for d in 대화_목록]
     대화_제목_맵 = {d["id"]: (d["제목"] or f"새 대화 ({d['생성일시'][:16]})") for d in 대화_목록}
+    대화_사업id_맵 = {d["id"]: d.get("사업_id") for d in 대화_목록}
+
+    # Claude 프로젝트처럼, 사업현황의 각 사업(업체명·용역명)을 대화가 연결될 수 있는
+    # "프로젝트"로 취급한다 — 사이드바의 프로젝트별 그룹핑과 AI 컨텍스트 주입에 쓴다.
+    사업_라벨_맵: dict[int, str] = {}
+    if "id" in 전체_df.columns:
+        for _, _행 in 전체_df.iterrows():
+            try:
+                _sid = int(_행["id"])
+            except (TypeError, ValueError):
+                continue
+            사업_라벨_맵[_sid] = f"{_행.get('업체명', '') or ''} · {_행.get('용역명', '') or ''}".strip(" ·")
 
     # "현재_대화_id"는 (다른 탭의 좁은 채팅 패널에서는) selectbox 위젯이 소유한 session_state
     # 키라 위젯이 이미 그려진 뒤에는 직접 대입할 수 없다 — 전환 요청은 별도 키에 잠시 담아뒀다가,
@@ -2124,6 +2141,25 @@ with 채팅_영역:
             st.session_state["현재_대화_id"] = 대화_id_리스트[0]
         현재_대화_id = st.session_state["현재_대화_id"]
 
+        def _대화_행_렌더(d: dict) -> None:
+            선택됨 = d["id"] == 현재_대화_id
+            라벨 = 대화_제목_맵.get(d["id"], str(d["id"]))
+            col_제목, col_삭제 = st.columns([5, 1])
+            if col_제목.button(
+                라벨, key=f"대화행_{d['id']}", use_container_width=True,
+                type="primary" if 선택됨 else "secondary",
+            ):
+                if not 선택됨:
+                    st.session_state["대화_전환_요청"] = d["id"]
+                    st.session_state.pop("대기중_제안", None)
+                    st.session_state.pop("삭제확인_대화id", None)
+                    st.rerun()
+            if col_삭제.button(
+                "🗑", key=f"대화삭제_{d['id']}", help="이 대화 삭제", use_container_width=True,
+            ):
+                st.session_state["삭제확인_대화id"] = d["id"]
+                st.rerun()
+
         사이드바_영역, 채팅_메인 = st.columns([1, 3.2], gap="medium")
         with 사이드바_영역:
             if st.button("＋ 새 대화", use_container_width=True, type="primary"):
@@ -2132,6 +2168,26 @@ with 채팅_영역:
                 st.session_state.pop("대기중_제안", None)
                 st.session_state.pop("삭제확인_대화id", None)
                 st.rerun()
+
+            with st.popover("📁 프로젝트로 새 대화", use_container_width=True):
+                st.caption("사업현황의 특정 사업에 연결된 대화를 시작합니다.")
+                _프로젝트_검색어 = st.text_input(
+                    "사업 검색", placeholder="업체명·용역명 검색",
+                    label_visibility="collapsed", key="신규_프로젝트_검색",
+                )
+                _후보_목록 = sorted(사업_라벨_맵.items(), key=lambda x: x[1])
+                if _프로젝트_검색어.strip():
+                    _q = _프로젝트_검색어.strip().lower()
+                    _후보_목록 = [(sid, 라벨) for sid, 라벨 in _후보_목록 if _q in 라벨.lower()]
+                if not _후보_목록:
+                    st.caption("일치하는 사업이 없습니다.")
+                for _sid, _라벨 in _후보_목록[:30]:
+                    if st.button(_라벨 or f"사업 #{_sid}", key=f"프로젝트생성_{_sid}", use_container_width=True):
+                        새_id = 대화_생성(사업_id=_sid)
+                        st.session_state["대화_전환_요청"] = 새_id
+                        st.session_state.pop("대기중_제안", None)
+                        st.session_state.pop("삭제확인_대화id", None)
+                        st.rerun()
 
             검색어 = st.text_input(
                 "대화 검색", placeholder="🔍 대화 검색",
@@ -2145,27 +2201,27 @@ with 채팅_영역:
                     if _검색어_소문자 in 대화_제목_맵.get(d["id"], "").lower()
                 ]
 
+            프로젝트별_대화: dict[int, list[dict]] = {}
+            일반_대화 = []
+            for d in 필터된_목록:
+                _sid = d.get("사업_id")
+                if _sid:
+                    프로젝트별_대화.setdefault(_sid, []).append(d)
+                else:
+                    일반_대화.append(d)
+
             with st.container(height=420, border=False):
                 if not 필터된_목록:
                     st.caption("검색 결과가 없습니다.")
-                for d in 필터된_목록:
-                    선택됨 = d["id"] == 현재_대화_id
-                    라벨 = 대화_제목_맵.get(d["id"], str(d["id"]))
-                    col_제목, col_삭제 = st.columns([5, 1])
-                    if col_제목.button(
-                        라벨, key=f"대화행_{d['id']}", use_container_width=True,
-                        type="primary" if 선택됨 else "secondary",
-                    ):
-                        if not 선택됨:
-                            st.session_state["대화_전환_요청"] = d["id"]
-                            st.session_state.pop("대기중_제안", None)
-                            st.session_state.pop("삭제확인_대화id", None)
-                            st.rerun()
-                    if col_삭제.button(
-                        "🗑", key=f"대화삭제_{d['id']}", help="이 대화 삭제", use_container_width=True,
-                    ):
-                        st.session_state["삭제확인_대화id"] = d["id"]
-                        st.rerun()
+                for _sid, _목록 in 프로젝트별_대화.items():
+                    st.caption(f"📁 {사업_라벨_맵.get(_sid, f'사업 #{_sid}')}")
+                    for d in _목록:
+                        _대화_행_렌더(d)
+                if 일반_대화:
+                    if 프로젝트별_대화:
+                        st.caption("💬 일반 대화")
+                    for d in 일반_대화:
+                        _대화_행_렌더(d)
 
             if st.session_state.get("삭제확인_대화id") in 대화_id_리스트:
                 _삭제대상_id = st.session_state["삭제확인_대화id"]
@@ -2219,6 +2275,22 @@ with 채팅_영역:
         채팅_메인 = st.container()
 
     with 채팅_메인:
+        _연결된_사업_id = 대화_사업id_맵.get(현재_대화_id)
+        프로젝트_컨텍스트 = ""
+        if _연결된_사업_id:
+            st.caption(f"📁 연결된 사업: {사업_라벨_맵.get(_연결된_사업_id, f'사업 #{_연결된_사업_id}')}")
+            _사업행_목록 = 전체_df[전체_df["id"] == _연결된_사업_id] if "id" in 전체_df.columns else 전체_df.iloc[0:0]
+            if not _사업행_목록.empty:
+                _r = _사업행_목록.iloc[0]
+                프로젝트_컨텍스트 = (
+                    "[이 대화는 다음 사업에 연결되어 있습니다 — "
+                    f"업체명: {_r.get('업체명', '')}, 용역명: {_r.get('용역명', '')}, "
+                    f"사업구분: {_r.get('사업구분', '')}, 기간: {_r.get('시작일', '')}~{_r.get('종료일', '')}, "
+                    f"계약금액: {_r.get('계약금액', '')}, 진행률: {_r.get('진행률', '')}%, "
+                    f"담당자: {_r.get('담당자', '')}, 사업단계: {_r.get('사업단계', '')}. "
+                    "질문에 사업 이름이 없어도 이 사업을 가리키는 것으로 우선 해석하세요.]\n\n"
+                )
+
         채팅_높이 = 820 if 현재_탭_선택 == "AI 채팅" else 480
         채팅_컨테이너 = st.container(height=채팅_높이, border=True, key="채팅_상자")
         이전_기록 = 채팅기록_불러오기(현재_대화_id)
@@ -2285,6 +2357,7 @@ with 채팅_영역:
                             else:
                                 미리보기_행수 = min(8, len(원본_df))
                                 합쳐진_질문 = (
+                                    프로젝트_컨텍스트 +
                                     f"[첨부 파일 '{첨부파일들[0].name}' 미리보기 — 총 {len(원본_df)}행, "
                                     f"컬럼: {list(원본_df.columns)}]\n"
                                     f"{원본_df.head(미리보기_행수).to_csv(index=False)}"
@@ -2332,6 +2405,7 @@ with 채팅_영역:
                                     답변 = f"'{첨부파일들[0].name}'에서 텍스트를 추출하지 못했습니다(스캔 이미지 PDF일 수 있습니다)."
                                 else:
                                     합쳐진_질문 = (
+                                        프로젝트_컨텍스트 +
                                         f"[첨부 문서 '{첨부파일들[0].name}' 내용]\n{문서_텍스트}\n\n"
                                         f"[사용자 질문]\n{질문 or '이 문서 내용을 요약해줘.'}"
                                     )
@@ -2352,7 +2426,7 @@ with 채팅_영역:
                             API용_기록 = [
                                 {"role": m["role"], "content": m["content"]} for m in 이전_기록[-20:]
                             ]
-                            결과 = ai_agent.질의하기(질문, history=API용_기록)
+                            결과 = ai_agent.질의하기(프로젝트_컨텍스트 + 질문, history=API용_기록)
                         st.write(결과["text"])
                 채팅기록_저장(현재_대화_id, "assistant", 결과["text"])
                 if 결과.get("pending_action"):
