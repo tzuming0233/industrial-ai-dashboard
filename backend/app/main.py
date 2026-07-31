@@ -49,9 +49,7 @@ class 로그인_요청(BaseModel):
     password: str
 
 
-def _인증_확인(kpc_session: str | None = Cookie(default=None)) -> None:
-    if not auth.세션_토큰_검증(kpc_session):
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+_인증_확인 = auth.인증_확인
 
 
 @app.post("/api/login")
@@ -124,3 +122,8 @@ def 대시보드_요약(_인증: None = Depends(_인증_확인)):
         "구분별_건수": _건수_목록("구분"),
         "사업단계별_건수": _건수_목록("사업단계"),
     }
+
+
+from backend.app.chat import router as _채팅_라우터  # noqa: E402 (순환 임포트 방지 위해 하단 배치)
+
+app.include_router(_채팅_라우터)

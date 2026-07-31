@@ -1,41 +1,26 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL as string
-
-type 사업행 = {
-  id: number
-  업체명: string
-  용역명: string
-  사업구분: string
-  사업단계: string
-  진행률: number
-}
-
-type 대시보드요약 = {
-  전체_건수: number
-  사업구분_수: number
-  구분_수: number
-  평균_진행률: number
-  사업구분별_건수: { 사업구분: string; 건수: number }[]
-}
-
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-  })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json()
-}
+import {
+  api,
+  createConversation,
+  deleteConversation,
+  listConversations,
+  getBusiness,
+  type 대화,
+  type 사업행,
+} from './api'
+import Sidebar from './components/Sidebar'
+import ChatMain from './components/ChatMain'
 
 function App() {
   const [인증됨, set인증됨] = useState<boolean | null>(null)
   const [비밀번호, set비밀번호] = useState('')
   const [로그인에러, set로그인에러] = useState('')
-  const [사업목록, set사업목록] = useState<사업행[] | null>(null)
-  const [요약, set요약] = useState<대시보드요약 | null>(null)
+
+  const [conversations, setConversations] = useState<대화[]>([])
+  const [businesses, setBusinesses] = useState<사업행[]>([])
+  const [currentId, setCurrentId] = useState<number | null>(null)
+  const [초기화중, set초기화중] = useState(true)
 
   useEffect(() => {
     api<{ 인증됨: boolean }>('/api/me')
@@ -45,9 +30,51 @@ function App() {
 
   useEffect(() => {
     if (!인증됨) return
-    api<사업행[]>('/api/business').then(set사업목록).catch(console.error)
-    api<대시보드요약>('/api/dashboard-summary').then(set요약).catch(console.error)
+    ;(async () => {
+      const [convList, bizList] = await Promise.all([listConversations(), getBusiness()])
+      setBusinesses(bizList)
+      if (convList.length === 0) {
+        const { id } = await createConversation()
+        setConversations(await listConversations())
+        setCurrentId(id)
+      } else {
+        setConversations(convList)
+        setCurrentId(convList[0].id)
+      }
+      set초기화중(false)
+    })()
   }, [인증됨])
+
+  async function refreshConversations() {
+    setConversations(await listConversations())
+  }
+
+  async function onNew() {
+    const { id } = await createConversation()
+    await refreshConversations()
+    setCurrentId(id)
+  }
+
+  async function onNewWithProject(사업_id: number) {
+    const { id } = await createConversation(사업_id)
+    await refreshConversations()
+    setCurrentId(id)
+  }
+
+  async function onDelete(id: number) {
+    await deleteConversation(id)
+    const list = await listConversations()
+    setConversations(list)
+    if (currentId === id) {
+      if (list.length > 0) {
+        setCurrentId(list[0].id)
+      } else {
+        const { id: 새id } = await createConversation()
+        setConversations(await listConversations())
+        setCurrentId(새id)
+      }
+    }
+  }
 
   const 로그인 = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,56 +91,43 @@ function App() {
 
   if (!인증됨) {
     return (
-      <div style={{ maxWidth: 320, margin: '80px auto', fontFamily: 'sans-serif' }}>
-        <h2>산업AI팀 사업 통합관리</h2>
-        <form onSubmit={로그인}>
-          <input
-            type="password"
-            value={비밀번호}
-            onChange={(e) => set비밀번호(e.target.value)}
-            placeholder="비밀번호"
-            style={{ width: '100%', padding: 8, marginBottom: 8 }}
-          />
-          <button type="submit" style={{ width: '100%', padding: 8 }}>
-            로그인
-          </button>
-        </form>
-        {로그인에러 && <p style={{ color: 'crimson' }}>{로그인에러}</p>}
+      <div className="login-page">
+        <div className="login-card">
+          <h2>산업AI팀 사업 통합관리</h2>
+          <form onSubmit={로그인}>
+            <input
+              type="password"
+              className="text-input"
+              value={비밀번호}
+              onChange={(e) => set비밀번호(e.target.value)}
+              placeholder="비밀번호"
+            />
+            <button type="submit" className="btn btn-primary btn-block">
+              로그인
+            </button>
+          </form>
+          {로그인에러 && <p className="proposal-error">{로그인에러}</p>}
+        </div>
       </div>
     )
   }
 
+  if (초기화중 || currentId === null) {
+    return <p style={{ padding: 24 }}>불러오는 중...</p>
+  }
+
   return (
-    <div style={{ maxWidth: 720, margin: '40px auto', fontFamily: 'sans-serif' }}>
-      <h2>산업AI팀 사업 통합관리 (Phase 0 — React/FastAPI 툴체인 검증)</h2>
-      {요약 && (
-        <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
-          <div>전체 건수: <b>{요약.전체_건수}</b></div>
-          <div>사업구분 수: <b>{요약.사업구분_수}</b></div>
-          <div>구분 수: <b>{요약.구분_수}</b></div>
-          <div>평균 진행률: <b>{요약.평균_진행률}%</b></div>
-        </div>
-      )}
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>업체명</th>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>용역명</th>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>사업단계</th>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>진행률</th>
-          </tr>
-        </thead>
-        <tbody>
-          {사업목록?.map((row) => (
-            <tr key={row.id}>
-              <td>{row.업체명}</td>
-              <td>{row.용역명}</td>
-              <td>{row.사업단계}</td>
-              <td>{row.진행률}%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="app-layout">
+      <Sidebar
+        conversations={conversations}
+        currentId={currentId}
+        businesses={businesses}
+        onSelect={setCurrentId}
+        onNew={onNew}
+        onNewWithProject={onNewWithProject}
+        onDelete={onDelete}
+      />
+      <ChatMain key={currentId} conversationId={currentId} onActivity={refreshConversations} />
     </div>
   )
 }

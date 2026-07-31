@@ -635,3 +635,57 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
         messages.append({"role": "user", "content": 결과_블록들})
 
     return {"text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.", "pending_action": 대기중_제안}
+
+
+def 질의하기_스트림(question: str, history: list[dict] | None = None, api_key: str | None = None):
+    """질의하기()의 스트리밍 버전 — FastAPI SSE 엔드포인트 전용.
+
+    제너레이터: 텍스트가 도착할 때마다 {"type": "token", "text": "..."}를 yield하고,
+    턴이 끝나면 마지막으로 {"type": "final", "text": 전체답변, "pending_action": ...}을
+    한 번 yield한다(Streamlit용 질의하기()와 반환 형태를 맞췄다). tool_use 루프 로직은
+    질의하기()와 동일 — 브라우저가 받은 토큰이 아니라 stream.get_final_message()만
+    신뢰해서 도구 호출을 판단한다.
+    """
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        yield {
+            "type": "final",
+            "text": "ANTHROPIC_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인하세요.",
+            "pending_action": None,
+        }
+        return
+
+    client = Anthropic(api_key=key)
+    messages = list(history or []) + [{"role": "user", "content": question}]
+
+    대기중_제안 = None
+    for _ in range(5):  # 도구 호출 반복 상한
+        with client.messages.stream(
+            model=MODEL_NAME, max_tokens=4096, system=SYSTEM_PROMPT, messages=messages, tools=TOOLS,
+        ) as stream:
+            for text in stream.text_stream:
+                yield {"type": "token", "text": text}
+            response = stream.get_final_message()
+
+        if response.stop_reason != "tool_use":
+            yield {"type": "final", "text": _텍스트_추출(response), "pending_action": 대기중_제안}
+            return
+
+        messages.append({"role": "assistant", "content": response.content})
+
+        결과_블록들 = []
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+            도구_인자 = _도구_인자_한글화(block.name, block.input or {})
+            결과 = _도구_실행(block.name, 도구_인자)
+            if block.name in 제안_도구명들:
+                대기중_제안 = {"유형": block.name, "인자": 도구_인자}
+            결과_블록들.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": json.dumps(결과, ensure_ascii=False),
+            })
+        messages.append({"role": "user", "content": 결과_블록들})
+
+    yield {"type": "final", "text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.", "pending_action": 대기중_제안}

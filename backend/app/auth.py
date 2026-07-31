@@ -8,6 +8,7 @@ httpOnly 쿠키 하나만 내려준다. 프론트(app.*)와 백엔드(api.*)가 
 
 import os
 
+from fastapi import Cookie, HTTPException
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 COOKIE_NAME = "kpc_session"
@@ -44,3 +45,9 @@ def 세션_토큰_검증(토큰: str | None) -> bool:
         return True
     except (BadSignature, SignatureExpired):
         return False
+
+
+def 인증_확인(kpc_session: str | None = Cookie(default=None)) -> None:
+    """FastAPI Depends()로 라우트에 붙이는 공용 인증 게이트. main.py/chat.py가 공유한다."""
+    if not 세션_토큰_검증(kpc_session):
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
