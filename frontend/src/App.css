@@ -39,6 +39,15 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  overflow: hidden;
+}
+
+/* AI 채팅 탭은 내부(메시지 목록)만 스크롤되는 고정 레이아웃을 유지하고,
+   나머지 읽기전용 탭은 화면 전체가 자연스럽게 스크롤되게 한다. */
+.app-body-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: block;
 }
 
 .app-layout {
@@ -95,10 +104,6 @@
 /* ---------- 읽기전용 페이지 공용(대시보드/표/마일스톤) ---------- */
 
 .page {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  overflow-y: auto;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;

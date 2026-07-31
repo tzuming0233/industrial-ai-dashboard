@@ -126,7 +126,7 @@ function App() {
   return (
     <div className="app-shell">
       <TopNav current={탭} onChange={set탭} />
-      <div className="app-body">
+      <div className={`app-body ${탭 !== 'AI 채팅' ? 'app-body-scroll' : ''}`}>
         {탭 === 'AI 채팅' && (
           <div className="app-layout">
             <Sidebar
