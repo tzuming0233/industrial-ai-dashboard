@@ -1,23 +1,27 @@
+/* Claude.ai풍의 따뜻한 중성 팔레트 — 채도 낮은 배경 + 테라코타 포인트,
+   딱딱한 테두리보다 은은한 그림자/여백으로 구획을 나눈다. */
 :root {
-  --남색: #1c90fb;
-  --남색-진하게: #1478d6;
-  --남색-연하게: #eff7ff;
-  --배경색: #f5f5f5;
-  --테두리색: #e6e6e6;
-  --본문색: #1d2129;
-  --보조텍스트색: #8c8c8c;
+  --남색: #c9683f;
+  --남색-진하게: #a8502f;
+  --남색-연하게: #f3e6dc;
+  --배경색: #f7f5f1;
+  --테두리색: #e9e4db;
+  --본문색: #2c2a26;
+  --보조텍스트색: #8a8477;
   --카드-배경: #ffffff;
-  --엠버코랄: #fc5356;
+  --엠버코랄: #d1503f;
+  --카드-그림자: 0 1px 2px rgba(60, 50, 40, 0.06), 0 4px 14px rgba(60, 50, 40, 0.05);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --배경색: #17181c;
-    --테두리색: #2c2e33;
-    --본문색: #ecedee;
-    --보조텍스트색: #9aa0a6;
-    --카드-배경: #202126;
-    --남색-연하게: #16324d;
+    --배경색: #232019;
+    --테두리색: #3a352c;
+    --본문색: #ece7dd;
+    --보조텍스트색: #a89f8e;
+    --카드-배경: #2c2820;
+    --남색-연하게: #422c1e;
+    --카드-그림자: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.2);
   }
 }
 
@@ -32,7 +36,8 @@
   width: 100%;
   color: var(--본문색);
   background: var(--배경색);
-  font-family: 'Segoe UI', 'Malgun Gothic', 'Pretendard', system-ui, sans-serif;
+  font-family: 'Söhne', 'Segoe UI', 'Malgun Gothic', 'Pretendard', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app-body {
@@ -62,16 +67,19 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--테두리색);
+  gap: 24px;
+  padding: 12px 24px;
   background: var(--카드-배경);
+  box-shadow: var(--카드-그림자);
+  position: relative;
+  z-index: 3;
 }
 
 .top-nav-title {
   font-weight: 600;
   font-size: 15px;
   white-space: nowrap;
+  color: var(--남색-진하게);
 }
 
 .top-nav-tabs {
@@ -84,15 +92,17 @@
   border: none;
   background: transparent;
   color: var(--보조텍스트색);
-  padding: 8px 14px;
-  border-radius: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
   font-size: 14px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
 }
 
 .top-nav-tab:hover {
   background: var(--배경색);
+  color: var(--본문색);
 }
 
 .top-nav-tab-active {
@@ -153,9 +163,9 @@
 
 .metric-card {
   background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
-  border-radius: 10px;
-  padding: 12px 14px;
+  box-shadow: var(--카드-그림자);
+  border-radius: 14px;
+  padding: 14px 16px;
 }
 
 .metric-label {
@@ -178,8 +188,8 @@
 
 .chart-box {
   background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
-  border-radius: 10px;
+  box-shadow: var(--카드-그림자);
+  border-radius: 14px;
   padding: 8px;
   height: 320px;
 }
@@ -205,8 +215,8 @@
 .table-wrap {
   overflow-x: auto;
   background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
-  border-radius: 10px;
+  box-shadow: var(--카드-그림자);
+  border-radius: 14px;
 }
 
 .data-table {
@@ -234,13 +244,13 @@
 }
 
 .row-delayed {
-  background: rgba(252, 83, 86, 0.08);
+  background: rgba(209, 80, 63, 0.08);
 }
 
 .status-badge {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
 }
@@ -288,8 +298,8 @@
   width: 320px;
   padding: 32px;
   background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
-  border-radius: 12px;
+  box-shadow: var(--카드-그림자);
+  border-radius: 18px;
 }
 
 .login-card h2 {
@@ -308,11 +318,12 @@
 
 .btn {
   border: none;
-  border-radius: 8px;
-  padding: 8px 14px;
+  border-radius: 999px;
+  padding: 9px 16px;
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: background 0.15s, opacity 0.15s, box-shadow 0.15s;
 }
 
 .btn:disabled {
@@ -332,7 +343,6 @@
 .btn-secondary {
   background: var(--배경색);
   color: var(--본문색);
-  border: 1px solid var(--테두리색);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -345,8 +355,8 @@
 
 .text-input {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
   border: 1px solid var(--테두리색);
   background: var(--카드-배경);
   color: var(--본문색);
@@ -366,9 +376,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
-  border-right: 1px solid var(--테두리색);
-  background: var(--카드-배경);
+  padding: 14px 12px;
+  background: var(--배경색);
   overflow: hidden;
 }
 
@@ -389,10 +398,9 @@
   right: 0;
   z-index: 10;
   background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(40, 30, 20, 0.16);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -493,6 +501,7 @@
   flex-direction: column;
   min-width: 0;
   height: 100%;
+  background: var(--카드-배경);
 }
 
 .chat-project-caption {
@@ -532,15 +541,14 @@
 .bubble {
   max-width: 75%;
   width: fit-content;
-  padding: 10px 14px;
-  border-radius: 16px;
+  padding: 11px 16px;
+  border-radius: 18px;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .bubble-row-assistant .bubble {
-  background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
+  background: var(--배경색);
   color: var(--본문색);
 }
 
@@ -590,9 +598,9 @@
   width: fit-content;
   min-width: 280px;
   background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
-  border-radius: 16px;
-  padding: 14px;
+  box-shadow: var(--카드-그림자);
+  border-radius: 18px;
+  padding: 16px;
 }
 
 .proposal-caption {
@@ -659,8 +667,7 @@
 /* ---------- 입력창 ---------- */
 
 .chat-input-row {
-  border-top: 1px solid var(--테두리색);
-  padding: 12px 20px;
+  padding: 12px 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -688,16 +695,29 @@
 
 .chat-input-controls {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+  background: var(--카드-배경);
+  border: 1px solid var(--테두리색);
+  border-radius: 26px;
+  padding: 6px 6px 6px 18px;
+  box-shadow: var(--카드-그림자);
 }
 
-.chat-text-input {
+.chat-text-input.text-input {
   flex: 1;
+  border: none;
+  padding: 9px 4px;
+  background: transparent;
+}
+
+.chat-text-input.text-input:focus {
+  outline: none;
 }
 
 .attach-btn {
   padding: 8px 10px;
+  border-radius: 999px;
 }
 
 @media (max-width: 720px) {
@@ -763,8 +783,8 @@
 .timeline-card {
   --tl-label-w: 260px;
   background: var(--카드-배경);
-  border: 1px solid var(--테두리색);
-  border-radius: 10px;
+  box-shadow: var(--카드-그림자);
+  border-radius: 14px;
   padding: 20px;
   overflow-x: auto;
 }
