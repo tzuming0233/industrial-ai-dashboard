@@ -1,26 +1,26 @@
-/* Claude.ai풍의 따뜻한 중성 팔레트 — 채도 낮은 배경 + 테라코타 포인트,
+/* 기존 KPC 남색 팔레트는 그대로 두고, 타이포/레이아웃/말풍선 구조를 Claude.ai에 가깝게 재설계.
    딱딱한 테두리보다 은은한 그림자/여백으로 구획을 나눈다. */
 :root {
-  --남색: #c9683f;
-  --남색-진하게: #a8502f;
-  --남색-연하게: #f3e6dc;
-  --배경색: #f7f5f1;
-  --테두리색: #e9e4db;
-  --본문색: #2c2a26;
-  --보조텍스트색: #8a8477;
+  --남색: #1c90fb;
+  --남색-진하게: #1478d6;
+  --남색-연하게: #eff7ff;
+  --배경색: #f5f5f5;
+  --테두리색: #e6e6e6;
+  --본문색: #1d2129;
+  --보조텍스트색: #8c8c8c;
   --카드-배경: #ffffff;
-  --엠버코랄: #d1503f;
-  --카드-그림자: 0 1px 2px rgba(60, 50, 40, 0.06), 0 4px 14px rgba(60, 50, 40, 0.05);
+  --엠버코랄: #fc5356;
+  --카드-그림자: 0 1px 2px rgba(20, 20, 30, 0.05), 0 4px 14px rgba(20, 20, 30, 0.05);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --배경색: #232019;
-    --테두리색: #3a352c;
-    --본문색: #ece7dd;
-    --보조텍스트색: #a89f8e;
-    --카드-배경: #2c2820;
-    --남색-연하게: #422c1e;
+    --배경색: #17181c;
+    --테두리색: #2c2e33;
+    --본문색: #ecedee;
+    --보조텍스트색: #9aa0a6;
+    --카드-배경: #202126;
+    --남색-연하게: #16324d;
     --카드-그림자: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.2);
   }
 }
@@ -89,6 +89,9 @@
 }
 
 .top-nav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: none;
   background: transparent;
   color: var(--보조텍스트색);
@@ -244,7 +247,7 @@
 }
 
 .row-delayed {
-  background: rgba(209, 80, 63, 0.08);
+  background: rgba(252, 83, 86, 0.08);
 }
 
 .status-badge {
@@ -387,6 +390,30 @@
   margin: 4px 0;
 }
 
+.sidebar-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--보조텍스트색);
+}
+
+.search-input-wrap svg {
+  position: absolute;
+  left: 12px;
+  pointer-events: none;
+}
+
+.search-input-wrap .search-input {
+  padding-left: 34px;
+}
+
 .project-popover-wrap {
   position: relative;
 }
@@ -438,9 +465,15 @@
 }
 
 .conv-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--보조텍스트색);
   margin: 6px 4px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conv-row {
@@ -505,6 +538,9 @@
 }
 
 .chat-project-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 20px 0;
   font-size: 13px;
   color: var(--보조텍스트색);
@@ -534,12 +570,8 @@
   justify-content: flex-end;
 }
 
-.bubble-row-assistant {
-  justify-content: flex-start;
-}
-
 .bubble {
-  max-width: 75%;
+  max-width: 72%;
   width: fit-content;
   padding: 11px 16px;
   border-radius: 18px;
@@ -547,11 +579,8 @@
   line-height: 1.6;
 }
 
-.bubble-row-assistant .bubble {
-  background: var(--배경색);
-  color: var(--본문색);
-}
-
+/* 사용자 메시지만 오른쪽 정렬 말풍선. AI 답변은 말풍선 없이 문서처럼 왼쪽에
+   전체 폭으로 흐르게 한다 — Claude.ai 채팅의 특징적인 구조. */
 .bubble-row-user .bubble {
   background: var(--남색);
   color: #fff;
@@ -581,9 +610,49 @@
   padding: 4px 8px;
 }
 
-.bubble-row-assistant .bubble th,
-.bubble-row-assistant .bubble td {
-  border-color: var(--테두리색);
+.assistant-text {
+  max-width: 92%;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--본문색);
+}
+
+.assistant-text p {
+  margin: 0 0 10px;
+}
+
+.assistant-text p:last-child {
+  margin-bottom: 0;
+}
+
+.assistant-text table {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.assistant-text th,
+.assistant-text td {
+  border: 1px solid var(--테두리색);
+  padding: 5px 10px;
+  text-align: left;
+}
+
+.assistant-text th {
+  background: var(--배경색);
+}
+
+.assistant-text ul,
+.assistant-text ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.assistant-text code {
+  background: var(--배경색);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 13px;
 }
 
 .typing-indicator {
@@ -686,11 +755,12 @@
 }
 
 .attached-file-chip button {
+  display: inline-flex;
+  align-items: center;
   background: transparent;
   border: none;
   cursor: pointer;
   color: inherit;
-  font-size: 12px;
 }
 
 .chat-input-controls {
@@ -715,9 +785,16 @@
   outline: none;
 }
 
-.attach-btn {
-  padding: 8px 10px;
+.attach-btn,
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   border-radius: 999px;
+  flex-shrink: 0;
 }
 
 @media (max-width: 720px) {

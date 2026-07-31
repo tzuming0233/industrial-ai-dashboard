@@ -10,6 +10,7 @@ import {
   type 메시지,
 } from '../api'
 import ProposalCard from './ProposalCard'
+import Icon from './Icon'
 
 type Props = {
   conversationId: number
@@ -150,47 +151,54 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
 
   return (
     <div className="chat-main">
-      {연결된_사업_라벨 && <p className="chat-project-caption">📁 연결된 사업: {연결된_사업_라벨}</p>}
+      {연결된_사업_라벨 && (
+        <p className="chat-project-caption">
+          <Icon name="folder" size={13} />
+          연결된 사업: {연결된_사업_라벨}
+        </p>
+      )}
 
       <div className="chat-messages">
         {loading && <p className="sidebar-caption">불러오는 중...</p>}
         {!loading && messages.length === 0 && !isStreaming && (
           <p className="chat-empty-hint">
             예: '이번달 종료되는 사업은?' / '가나전자 사업을 완료 상태로 바꿔줘' — 엑셀·CSV·PDF·HWP
-            파일을 첨부(📎)하면 무조건 데이터로 반영하지 않고, 검토·상의가 필요한지 반영이 필요한지
+            파일을 첨부하면 무조건 데이터로 반영하지 않고, 검토·상의가 필요한지 반영이 필요한지
             먼저 판단합니다.
           </p>
         )}
 
-        {messages.map((m, i) => (
-          <div key={i} className={`bubble-row ${m.role === 'user' ? 'bubble-row-user' : 'bubble-row-assistant'}`}>
-            <div className="bubble">
+        {messages.map((m, i) =>
+          m.role === 'user' ? (
+            <div key={i} className="bubble-row bubble-row-user">
+              <div className="bubble">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+              </div>
+            </div>
+          ) : (
+            <div key={i} className="assistant-text">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
             </div>
-          </div>
-        ))}
+          ),
+        )}
 
         {isStreaming && (
-          <div className="bubble-row bubble-row-assistant">
-            <div className="bubble">
-              {streamingText ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
-              ) : (
-                <span className="typing-indicator">{streamingStatus || 'AI가 답변을 생성 중...'}</span>
-              )}
-            </div>
+          <div className="assistant-text">
+            {streamingText ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
+            ) : (
+              <span className="typing-indicator">{streamingStatus || 'AI가 답변을 생성 중...'}</span>
+            )}
           </div>
         )}
 
         {pendingProposal && (
-          <div className="bubble-row bubble-row-assistant">
-            <ProposalCard
-              요약={pendingProposal.요약}
-              처리중={proposalBusy}
-              onApply={제안_적용}
-              onCancel={제안_취소}
-            />
-          </div>
+          <ProposalCard
+            요약={pendingProposal.요약}
+            처리중={proposalBusy}
+            onApply={제안_적용}
+            onCancel={제안_취소}
+          />
         )}
 
         {error && <p className="proposal-error">오류: {error}</p>}
@@ -200,9 +208,10 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
       <form className="chat-input-row" onSubmit={전송}>
         {attachedFile && (
           <div className="attached-file-chip">
-            📎 {attachedFile.name}
-            <button type="button" onClick={() => setAttachedFile(null)}>
-              ✕
+            <Icon name="paperclip" size={13} />
+            {attachedFile.name}
+            <button type="button" onClick={() => setAttachedFile(null)} aria-label="첨부 제거">
+              <Icon name="x" size={12} />
             </button>
           </div>
         )}
@@ -219,8 +228,9 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             className="btn btn-secondary attach-btn"
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming}
+            title="파일 첨부"
           >
-            📎
+            <Icon name="paperclip" size={16} />
           </button>
           <input
             className="text-input chat-text-input"
@@ -229,8 +239,8 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             onChange={(e) => setInputText(e.target.value)}
             disabled={isStreaming}
           />
-          <button className="btn btn-primary" type="submit" disabled={isStreaming}>
-            전송
+          <button className="btn btn-primary send-btn" type="submit" disabled={isStreaming} title="전송">
+            <Icon name="send" size={16} />
           </button>
         </div>
       </form>

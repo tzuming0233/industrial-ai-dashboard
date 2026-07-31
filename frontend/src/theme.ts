@@ -1,34 +1,32 @@
-// Claude.ai풍의 따뜻한 중성 팔레트(App.css :root와 동일한 값) — 채도 낮은 배경 +
-// 테라코타 포인트. 변수 이름(전기블루 등)은 예전 KPC 남색 팔레트 시절 그대로 두되
-// 실제 색상 값만 이 팔레트로 바꿔서, 차트 색과 화면 UI 색이 같이 움직이게 한다.
-export const 남색 = '#C9683F'
-export const 전기블루 = '#C9683F'
-export const 엠버코랄 = '#D1503F'
-export const 차트리즈 = '#6E9A6A'
-export const 본문색 = '#2C2A26'
-export const 보조텍스트색 = '#8A8477'
-export const 차트_격자색 = '#E9E4DB'
+// Streamlit CSS 작업 때 검증한 KPC 팔레트를 그대로 재사용한다 (app.py의 _테마_토큰()과 동일).
+export const 남색 = '#1C90FB'
+export const 전기블루 = '#1C90FB'
+export const 엠버코랄 = '#FC5356'
+export const 차트리즈 = '#20C997'
+export const 본문색 = '#1D2129'
+export const 보조텍스트색 = '#8C8C8C'
+export const 차트_격자색 = '#E6E6E6'
 
 export const 카테고리_팔레트 = [
-  '#C9683F', '#4C7C8C', '#7C9A5C', '#D1A24C', '#8B6F9E', '#B5544A', '#5C8A7A', '#9C9284',
+  '#1C90FB', '#5F65FF', '#20C997', '#F0C325', '#F8A457', '#FC5356', '#39B0D2', '#8C8C8C',
 ]
 
 export const 상태_차트_색상: Record<string, string> = {
-  미분류: '#C7C0B3',
-  '사업 발굴': '#9C9284',
-  '수주 계획': '#D1A24C',
-  '제안 진행': '#C9683F',
-  '계약 체결': '#6E9A6A',
-  '사업 수행': '#8B6F9E',
+  미분류: '#C4C4C4',
+  '사업 발굴': '#8C8C8C',
+  '수주 계획': '#F0C325',
+  '제안 진행': '#1C90FB',
+  '계약 체결': '#20C997',
+  '사업 수행': '#5F65FF',
 }
 
 export const 상태_배지_색상: Record<string, [string, string]> = {
-  미분류: ['#F1EFEA', '#8A8477'],
-  '사업 발굴': ['#EFEDE7', '#71695A'],
-  '수주 계획': ['#FBF0DC', '#96721F'],
-  '제안 진행': ['#F3E6DC', '#A8502F'],
-  '계약 체결': ['#E7F1E5', '#4E7A4A'],
-  '사업 수행': ['#EEE7F3', '#6B5580'],
+  미분류: ['#F5F5F5', '#8C8C8C'],
+  '사업 발굴': ['#F0F0F0', '#5B6B82'],
+  '수주 계획': ['#FFF1D6', '#B7791F'],
+  '제안 진행': ['#EFF7FF', '#1C90FB'],
+  '계약 체결': ['#E6F9F0', '#20C997'],
+  '사업 수행': ['#F1EEFF', '#5F65FF'],
 }
 
 export const 사업단계_옵션 = ['미분류', '사업 발굴', '수주 계획', '제안 진행', '계약 체결', '사업 수행']
@@ -42,11 +40,11 @@ export function 고정_색상맵(고유값들: string[]): Record<string, string>
   return 맵
 }
 
-// 카테고리를 여러 색으로 흩뿌리지 않고 테라코타 한 가지 색조의 명암 단계로만 구분한다(app.py의 _단조_색상맵과 동일한 방식).
+// 카테고리를 여러 색으로 흩뿌리지 않고 남색 한 가지 색조의 명암 단계로만 구분한다(app.py의 _단조_색상맵과 동일).
 export function 단조_색상맵(고유값들: string[]): Record<string, string> {
   const 정렬됨 = [...고유값들].sort()
-  const 연한: [number, number, number] = [0xf3, 0xe6, 0xdc]
-  const 진한: [number, number, number] = [0xa8, 0x50, 0x2f]
+  const 연한: [number, number, number] = [0xef, 0xf7, 0xff]
+  const 진한: [number, number, number] = [0x14, 0x78, 0xd6]
   const n = Math.max(정렬됨.length - 1, 1)
   const 맵: Record<string, string> = {}
   정렬됨.forEach((v, i) => {

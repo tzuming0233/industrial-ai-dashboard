@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { 대화, 사업행 } from '../api'
+import Icon from './Icon'
 
 type Props = {
   conversations: 대화[]
@@ -67,7 +68,7 @@ export default function Sidebar({
           {d.제목 || `새 대화 (${d.생성일시.slice(0, 16)})`}
         </button>
         <button className="conv-row-delete" title="이 대화 삭제" onClick={() => set삭제확인_id(d.id)}>
-          🗑
+          <Icon name="trash" size={14} />
         </button>
       </div>
     )
@@ -75,16 +76,18 @@ export default function Sidebar({
 
   return (
     <div className="sidebar">
-      <button className="btn btn-primary btn-block" onClick={onNew}>
-        ＋ 새 대화
+      <button className="btn btn-primary btn-block sidebar-action-btn" onClick={onNew}>
+        <Icon name="plus" size={15} />
+        새 대화
       </button>
 
       <div className="project-popover-wrap">
         <button
-          className="btn btn-secondary btn-block"
+          className="btn btn-secondary btn-block sidebar-action-btn"
           onClick={() => set프로젝트패널_열림((v) => !v)}
         >
-          📁 프로젝트로 새 대화
+          <Icon name="folder" size={15} />
+          프로젝트로 새 대화
         </button>
         {프로젝트패널_열림 && (
           <div className="project-popover">
@@ -115,12 +118,15 @@ export default function Sidebar({
         )}
       </div>
 
-      <input
-        className="text-input search-input"
-        placeholder="🔍 대화 검색"
-        value={검색어}
-        onChange={(e) => set검색어(e.target.value)}
-      />
+      <div className="search-input-wrap">
+        <Icon name="search" size={14} />
+        <input
+          className="text-input search-input"
+          placeholder="대화 검색"
+          value={검색어}
+          onChange={(e) => set검색어(e.target.value)}
+        />
+      </div>
 
       <div className="conv-list">
         {필터된_목록.length === 0 && <p className="sidebar-caption">검색 결과가 없습니다.</p>}
@@ -129,14 +135,17 @@ export default function Sidebar({
           const 표시라벨 = 라벨 ? `${라벨.업체명} · ${라벨.용역명}` : `사업 #${사업_id}`
           return (
             <div key={사업_id} className="conv-group">
-              <p className="conv-group-label">📁 {표시라벨}</p>
+              <p className="conv-group-label">
+                <Icon name="folder" size={12} />
+                {표시라벨}
+              </p>
               {목록.map(대화_행)}
             </div>
           )
         })}
         {일반.length > 0 && (
           <div className="conv-group">
-            {프로젝트별.size > 0 && <p className="conv-group-label">💬 일반 대화</p>}
+            {프로젝트별.size > 0 && <p className="conv-group-label">일반 대화</p>}
             {일반.map(대화_행)}
           </div>
         )}
