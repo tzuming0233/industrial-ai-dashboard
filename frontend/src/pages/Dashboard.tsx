@@ -134,7 +134,7 @@ export default function Dashboard() {
               ...차트_공통레이아웃(false),
               title: { text: '사업단계별 건수' },
               height: 300,
-              xaxis: { tickangle: -20 },
+              xaxis: { ...차트_공통레이아웃(false).xaxis, tickangle: -20 },
             }}
             config={{ displayModeBar: false, responsive: true }}
             style={{ width: '100%', height: '100%' }}
