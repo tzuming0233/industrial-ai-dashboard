@@ -1,19 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
-import Plot from 'react-plotly.js'
+import { useMemo, useState, useEffect } from 'react'
 import { getBusiness, getHistory, type 사업행, type 이력행 } from '../api'
 import MetricCard from '../components/MetricCard'
 import StatusBadge from '../components/StatusBadge'
-import { 단조_색상맵, 상태_차트_색상, 엠버코랄, 차트_공통레이아웃, 본문색 } from '../theme'
+import { 상태_차트_색상, 카테고리_팔레트 } from '../theme'
 
 const 하루_MS = 24 * 60 * 60 * 1000
 
 type 그룹기준 = '사업구분' | '담당자'
+
+function 월_레이블(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}. ${d.getMonth() + 1}`
+}
 
 export default function Milestone() {
   const [rows, setRows] = useState<사업행[]>([])
   const [history, setHistory] = useState<이력행[]>([])
   const [loading, setLoading] = useState(true)
   const [그룹, set그룹] = useState<그룹기준>('사업구분')
+  const [hover, setHover] = useState<number | null>(null)
 
   useEffect(() => {
     Promise.all([getBusiness(), getHistory()])
@@ -24,8 +29,8 @@ export default function Milestone() {
       .finally(() => setLoading(false))
   }, [])
 
-  const 마일스톤_df = useMemo(() => {
-    const 오늘 = new Date()
+  const 마일스톤_목록 = useMemo(() => {
+    const 오늘 = Date.now()
     return rows
       .filter((r) => r.시작일 && r.종료일)
       .map((r) => {
@@ -33,49 +38,78 @@ export default function Milestone() {
         const 종료 = new Date(r.종료일!).getTime()
         const 기간 = Math.max(종료 - 시작, 하루_MS)
         const 진행률 = Math.min(Math.max(r.진행률 ?? 0, 0), 100)
-        const 진행_종료 = 시작 + 기간 * (진행률 / 100)
-        const dday = Math.round((종료 - 오늘.getTime()) / 하루_MS)
-        const 그룹값 = (r[그룹] || '미지정') as string
+        const dday = Math.round((종료 - 오늘) / 하루_MS)
         return {
           ...r,
           표시명: `${r.업체명} · ${r.용역명}`,
           시작_ms: 시작,
           종료_ms: 종료,
-          진행_종료_ms: 진행_종료,
+          기간_ms: 기간,
           진행률_숫자: 진행률,
           dday,
-          그룹값,
+          그룹값: (r[그룹] || '미지정') as string,
         }
       })
       .sort((a, b) => a.종료_ms - b.종료_ms)
   }, [rows, 그룹])
 
   const kpi = useMemo(() => {
-    const 전체 = 마일스톤_df.length
-    const 지연 = 마일스톤_df.filter((r) => r.dday < 0 && r.진행률_숫자 < 100).length
-    const 진행중 = 마일스톤_df.filter((r) => ['제안 진행', '계약 체결', '사업 수행'].includes(r.사업단계)).length
-    const 평균진행률 = 전체 ? 마일스톤_df.reduce((s, r) => s + r.진행률_숫자, 0) / 전체 : 0
+    const 전체 = 마일스톤_목록.length
+    const 지연 = 마일스톤_목록.filter((r) => r.dday < 0 && r.진행률_숫자 < 100).length
+    const 진행중 = 마일스톤_목록.filter((r) => ['제안 진행', '계약 체결', '사업 수행'].includes(r.사업단계)).length
+    const 평균진행률 = 전체 ? 마일스톤_목록.reduce((s, r) => s + r.진행률_숫자, 0) / 전체 : 0
     return { 전체, 지연, 진행중, 평균진행률 }
-  }, [마일스톤_df])
+  }, [마일스톤_목록])
+
+  const 그룹값_목록 = useMemo(() => [...new Set(마일스톤_목록.map((r) => r.그룹값))].sort(), [마일스톤_목록])
+  const 색상맵 = useMemo(() => {
+    const 맵: Record<string, string> = {}
+    그룹값_목록.forEach((g, i) => (맵[g] = 카테고리_팔레트[i % 카테고리_팔레트.length]))
+    return 맵
+  }, [그룹값_목록])
 
   const 전환_목록 = useMemo(() => {
     const 패턴 = /사업단계:\s*(.+?)\s*→\s*([^;]+)/g
-    const 표시명_맵 = new Map(마일스톤_df.map((r) => [r.id, r.표시명]))
-    const 결과: { 일시: string; 표시명: string; 새단계: string }[] = []
+    const id_집합 = new Map(마일스톤_목록.map((r) => [r.id, r]))
+    const 결과: { 사업_id: number; 일시_ms: number; 새단계: string }[] = []
     for (const h of history) {
-      if (h.유형 !== '수정' || !h.내용) continue
-      const 표시명 = 표시명_맵.get(h.사업_id)
-      if (!표시명) continue
+      if (h.유형 !== '수정' || !h.내용 || !id_집합.has(h.사업_id)) continue
+      const 일시_ms = new Date(h.작성일시).getTime()
+      if (Number.isNaN(일시_ms)) continue
       for (const m of h.내용.matchAll(패턴)) {
-        결과.push({ 일시: h.작성일시, 표시명, 새단계: m[2].trim() })
+        결과.push({ 사업_id: h.사업_id, 일시_ms, 새단계: m[2].trim() })
       }
     }
     return 결과
-  }, [history, 마일스톤_df])
+  }, [history, 마일스톤_목록])
+
+  // 타임라인 전체 가로 범위 — 모든 사업의 시작/종료일을 아우르고, 앞뒤로 살짝 여유를 둔다.
+  const 범위 = useMemo(() => {
+    if (마일스톤_목록.length === 0) return null
+    const 오늘 = Date.now()
+    const 전체_시작 = Math.min(...마일스톤_목록.map((r) => r.시작_ms), 오늘)
+    const 전체_끝 = Math.max(...마일스톤_목록.map((r) => r.종료_ms), 오늘)
+    const 여유 = Math.max((전체_끝 - 전체_시작) * 0.04, 하루_MS * 3)
+    return { 시작: 전체_시작 - 여유, 끝: 전체_끝 + 여유 }
+  }, [마일스톤_목록])
+
+  const 월_눈금 = useMemo(() => {
+    if (!범위) return []
+    const 목록: { ms: number; pct: number }[] = []
+    const d = new Date(범위.시작)
+    d.setDate(1)
+    d.setHours(0, 0, 0, 0)
+    while (d.getTime() < 범위.끝) {
+      const ms = d.getTime()
+      if (ms >= 범위.시작) 목록.push({ ms, pct: ((ms - 범위.시작) / (범위.끝 - 범위.시작)) * 100 })
+      d.setMonth(d.getMonth() + 1)
+    }
+    return 목록
+  }, [범위])
 
   if (loading) return <p className="page-loading">불러오는 중...</p>
 
-  if (마일스톤_df.length === 0) {
+  if (마일스톤_목록.length === 0 || !범위) {
     return (
       <div className="page">
         <div className="alert alert-info">선택된 조건에 시작일/종료일이 모두 있는 건이 없습니다.</div>
@@ -83,76 +117,13 @@ export default function Milestone() {
     )
   }
 
-  const 그룹값_목록 = [...new Set(마일스톤_df.map((r) => r.그룹값))]
-  const 색상맵 = 단조_색상맵(그룹값_목록)
-  const y_순서 = 마일스톤_df.map((r) => r.표시명)
-  const 오늘_iso = new Date().toISOString().slice(0, 10)
-
-  const 배경_traces = 그룹값_목록.map((g) => {
-    const 서브 = 마일스톤_df.filter((r) => r.그룹값 === g)
-    return {
-      type: 'bar' as const,
-      orientation: 'h' as const,
-      base: 서브.map((r) => new Date(r.시작_ms).toISOString().slice(0, 10)),
-      x: 서브.map((r) => r.종료_ms - r.시작_ms),
-      y: 서브.map((r) => r.표시명),
-      name: g,
-      marker: { color: 색상맵[g] },
-      opacity: 0.32,
-      hovertemplate: '%{y}<extra></extra>',
-    }
-  })
-
-  const 진행_traces = 그룹값_목록.map((g) => {
-    const 서브 = 마일스톤_df.filter((r) => r.그룹값 === g)
-    return {
-      type: 'bar' as const,
-      orientation: 'h' as const,
-      base: 서브.map((r) => new Date(r.시작_ms).toISOString().slice(0, 10)),
-      x: 서브.map((r) => r.진행_종료_ms - r.시작_ms),
-      y: 서브.map((r) => r.표시명),
-      width: 0.4,
-      marker: { color: 색상맵[g] },
-      showlegend: false,
-      hoverinfo: 'skip' as const,
-    }
-  })
-
-  const 텍스트_trace = {
-    type: 'scatter' as const,
-    mode: 'text' as const,
-    x: 마일스톤_df.map((r) => new Date(r.진행_종료_ms).toISOString().slice(0, 10)),
-    y: 마일스톤_df.map((r) => r.표시명),
-    text: 마일스톤_df.map((r) => `${r.진행률_숫자.toFixed(0)}%`),
-    textposition: 'middle right' as const,
-    textfont: { size: 11, color: 본문색 },
-    showlegend: false,
-    hoverinfo: 'skip' as const,
-  }
-
-  const 전환_trace = {
-    type: 'scatter' as const,
-    mode: 'markers' as const,
-    x: 전환_목록.map((t) => t.일시),
-    y: 전환_목록.map((t) => t.표시명),
-    marker: {
-      symbol: 'diamond',
-      size: 11,
-      line: { width: 1, color: 본문색 },
-      color: 전환_목록.map((t) => 상태_차트_색상[t.새단계] ?? '#8C8C8C'),
-    },
-    text: 전환_목록.map((t) => t.새단계),
-    hovertemplate: '%{y}<br>%{text} 전환: %{x|%Y-%m-%d}<extra></extra>',
-    showlegend: false,
-  }
+  const 전체_기간 = 범위.끝 - 범위.시작
+  const pct = (ms: number) => ((ms - 범위.시작) / 전체_기간) * 100
+  const 오늘_pct = pct(Date.now())
 
   return (
     <div className="page">
       <h2 className="page-title">마일스톤 타임라인</h2>
-      <p className="sidebar-caption">
-        연한 막대는 전체 용역기간, 진한 막대는 진행률만큼 채워진 실제 진행 구간입니다. ◆ 마커는
-        이력에 기록된 실제 단계 전환(사업단계 변경) 시점을 보여줍니다.
-      </p>
 
       <div className="metric-row">
         <MetricCard label="전체 마일스톤" value={`${kpi.전체}건`} />
@@ -161,56 +132,103 @@ export default function Milestone() {
         <MetricCard label="평균 진행률" value={`${kpi.평균진행률.toFixed(0)}%`} />
       </div>
 
-      <div className="radio-row">
+      <div className="segmented">
         {(['사업구분', '담당자'] as 그룹기준[]).map((g) => (
-          <label key={g} className="radio-label">
-            <input type="radio" checked={그룹 === g} onChange={() => set그룹(g)} />
-            {g}
-          </label>
+          <button
+            key={g}
+            className={`segmented-item ${그룹 === g ? 'segmented-item-active' : ''}`}
+            onClick={() => set그룹(g)}
+          >
+            {g}별 보기
+          </button>
         ))}
       </div>
 
-      <div className="chart-box chart-box-full">
-        <Plot
-          data={[...배경_traces, ...진행_traces, 텍스트_trace, 전환_trace]}
-          layout={{
-            ...차트_공통레이아웃(true),
-            title: { text: `마일스톤 타임라인 · ${kpi.전체}건` },
-            barmode: 'overlay',
-            height: Math.max(320, 마일스톤_df.length * 30),
-            xaxis: { ...차트_공통레이아웃().xaxis, type: 'date' },
-            yaxis: {
-              ...차트_공통레이아웃().yaxis,
-              categoryorder: 'array',
-              categoryarray: y_순서,
-              autorange: 'reversed',
-            },
-            shapes: [
-              {
-                type: 'line',
-                x0: 오늘_iso,
-                x1: 오늘_iso,
-                yref: 'paper',
-                y0: 0,
-                y1: 1,
-                line: { color: 엠버코랄, dash: 'dash' },
-              },
-            ],
-            annotations: [
-              {
-                x: 오늘_iso,
-                yref: 'paper',
-                y: 1,
-                text: '오늘',
-                showarrow: false,
-                yanchor: 'bottom',
-                font: { color: 엠버코랄, size: 11 },
-              },
-            ],
-          }}
-          config={{ displayModeBar: false, responsive: true }}
-          style={{ width: '100%', height: '100%' }}
-        />
+      <div className="timeline-legend">
+        {그룹값_목록.map((g) => (
+          <span key={g} className="timeline-legend-item">
+            <span className="timeline-legend-dot" style={{ background: 색상맵[g] }} />
+            {g}
+          </span>
+        ))}
+      </div>
+
+      <div className="timeline-card">
+        <div className="timeline-header">
+          <div className="timeline-label-spacer" />
+          <div className="timeline-header-track">
+            {월_눈금.map((m) => (
+              <span key={m.ms} className="timeline-month-label" style={{ left: `${m.pct}%` }}>
+                {월_레이블(m.ms)}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="timeline-body">
+          <div className="timeline-overlay">
+            {월_눈금.map((m) => (
+              <div key={m.ms} className="timeline-gridline" style={{ left: `${m.pct}%` }} />
+            ))}
+            <div className="timeline-today-line" style={{ left: `${오늘_pct}%` }}>
+              <span className="timeline-today-label">오늘</span>
+            </div>
+          </div>
+
+          {마일스톤_목록.map((r) => {
+            const left = pct(r.시작_ms)
+            const width = pct(r.종료_ms) - left
+            const 지연 = r.dday < 0 && r.진행률_숫자 < 100
+            const 이_사업_전환 = 전환_목록.filter((t) => t.사업_id === r.id)
+            return (
+              <div
+                key={r.id}
+                className={`timeline-row ${지연 ? 'timeline-row-delayed' : ''}`}
+                onMouseEnter={() => setHover(r.id)}
+                onMouseLeave={() => setHover((h) => (h === r.id ? null : h))}
+              >
+                <div className="timeline-label" title={r.표시명}>
+                  {r.표시명}
+                </div>
+                <div className="timeline-track">
+                  <div
+                    className="timeline-bar"
+                    style={{ left: `${left}%`, width: `${width}%`, background: `${색상맵[r.그룹값]}33` }}
+                  >
+                    <div
+                      className="timeline-bar-fill"
+                      style={{ width: `${r.진행률_숫자}%`, background: 색상맵[r.그룹값] }}
+                    />
+                  </div>
+                  <span className="timeline-bar-pct" style={{ left: `${left + width}%` }}>
+                    {r.진행률_숫자.toFixed(0)}%
+                  </span>
+                  {이_사업_전환.map((t, i) => (
+                    <span
+                      key={i}
+                      className="timeline-marker"
+                      style={{
+                        left: `${pct(t.일시_ms)}%`,
+                        background: 상태_차트_색상[t.새단계] ?? '#8C8C8C',
+                      }}
+                      title={`${t.새단계} 전환: ${new Date(t.일시_ms).toISOString().slice(0, 10)}`}
+                    />
+                  ))}
+                  {hover === r.id && (
+                    <div className="timeline-tooltip" style={{ left: `${left}%` }}>
+                      <b>{r.표시명}</b>
+                      <br />
+                      {r.시작일} ~ {r.종료일} · {r.진행률_숫자.toFixed(0)}%
+                      <br />
+                      {r.담당자 ? `담당자: ${r.담당자} · ` : ''}
+                      {r.dday >= 0 ? `D-${r.dday}` : `${Math.abs(r.dday)}일 초과`}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       <hr className="divider" />
@@ -230,7 +248,7 @@ export default function Milestone() {
             </tr>
           </thead>
           <tbody>
-            {[...마일스톤_df]
+            {[...마일스톤_목록]
               .sort((a, b) => a.dday - b.dday)
               .map((r) => {
                 const 지연 = r.dday < 0 && r.진행률_숫자 < 100

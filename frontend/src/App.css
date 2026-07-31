@@ -700,3 +700,220 @@
     height: 100%;
   }
 }
+
+/* ---------- 세그먼트 컨트롤 (마일스톤 그룹 전환) ---------- */
+
+.segmented {
+  display: inline-flex;
+  background: var(--배경색);
+  border: 1px solid var(--테두리색);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  width: fit-content;
+}
+
+.segmented-item {
+  border: none;
+  background: transparent;
+  color: var(--보조텍스트색);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.segmented-item-active {
+  background: var(--카드-배경);
+  color: var(--본문색);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ---------- 마일스톤 타임라인 (직접 구현) ---------- */
+
+.timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.timeline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--보조텍스트색);
+}
+
+.timeline-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.timeline-card {
+  --tl-label-w: 240px;
+  background: var(--카드-배경);
+  border: 1px solid var(--테두리색);
+  border-radius: 10px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.timeline-header {
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.timeline-label-spacer {
+  width: var(--tl-label-w);
+  flex-shrink: 0;
+}
+
+.timeline-header-track {
+  flex: 1;
+  position: relative;
+  min-width: 480px;
+  height: 18px;
+}
+
+.timeline-month-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--보조텍스트색);
+  white-space: nowrap;
+}
+
+.timeline-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timeline-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--tl-label-w);
+  right: 0;
+  min-width: 480px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.timeline-gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--테두리색);
+}
+
+.timeline-today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed var(--엠버코랄);
+}
+
+.timeline-today-label {
+  position: absolute;
+  top: -18px;
+  left: 4px;
+  font-size: 11px;
+  color: var(--엠버코랄);
+  white-space: nowrap;
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  position: relative;
+  z-index: 1;
+  border-radius: 6px;
+}
+
+.timeline-row:hover {
+  background: var(--배경색);
+}
+
+.timeline-row-delayed .timeline-label {
+  color: var(--엠버코랄);
+}
+
+.timeline-label {
+  width: var(--tl-label-w);
+  flex-shrink: 0;
+  font-size: 13px;
+  padding-right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-track {
+  flex: 1;
+  position: relative;
+  min-width: 480px;
+  height: 22px;
+}
+
+.timeline-bar {
+  position: absolute;
+  top: 0;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  min-width: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.timeline-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 6px;
+}
+
+.timeline-bar-pct {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--본문색);
+  white-space: nowrap;
+}
+
+.timeline-marker {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 1px solid var(--카드-배경);
+  z-index: 2;
+}
+
+.timeline-tooltip {
+  position: absolute;
+  top: -6px;
+  transform: translateY(-100%);
+  background: var(--본문색);
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
