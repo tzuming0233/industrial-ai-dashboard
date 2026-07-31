@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backend.app import auth, repository as repo
+from backend.app.files import 엑셀로_변환
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -107,6 +108,26 @@ def 대시보드_요약(_인증: None = Depends(_인증_확인)):
     목표매출 = int(올해_목표행.iloc[0]["목표매출"]) if not 올해_목표행.empty else None
     실적_매출 = int(df["당해년도수입금액"].sum()) if not df.empty else 0
 
+    오늘 = pd.Timestamp.today().normalize()
+    임박_df = df.copy()
+    마감임박: list[dict] = []
+    if not 임박_df.empty:
+        임박_df["종료일_dt"] = pd.to_datetime(임박_df["종료일"], errors="coerce")
+        임박_df["D-day"] = (임박_df["종료일_dt"] - 오늘).dt.days
+        임박_df = 임박_df[
+            임박_df["종료일_dt"].notna()
+            & (임박_df["D-day"] <= 30)
+            & (pd.to_numeric(임박_df["진행률"], errors="coerce").fillna(0) < 100)
+        ].sort_values("D-day")
+        마감임박 = _NaN_정리(임박_df[["업체명", "용역명", "종료일", "D-day", "사업단계"]]).to_dict("records")
+
+    담당자별_건수: list[dict] = []
+    if not df.empty:
+        담당자_시리즈 = df["담당자"].replace("", "(미지정)").fillna("(미지정)")
+        집계 = 담당자_시리즈.value_counts().reset_index()
+        집계.columns = ["담당자", "건수"]
+        담당자별_건수 = 집계.to_dict("records")
+
     return {
         "전체_건수": int(len(df)),
         "사업구분_수": int(df["사업구분"].nunique()) if not df.empty else 0,
@@ -121,7 +142,30 @@ def 대시보드_요약(_인증: None = Depends(_인증_확인)):
         "사업구분별_건수": _건수_목록("사업구분"),
         "구분별_건수": _건수_목록("구분"),
         "사업단계별_건수": _건수_목록("사업단계"),
+        "담당자별_건수": 담당자별_건수,
+        "마감임박": 마감임박,
     }
+
+
+@app.get("/api/history")
+def 전체_이력(_인증: None = Depends(_인증_확인)):
+    df = repo.전체_이력_불러오기()
+    return _NaN_정리(df).to_dict("records")
+
+
+class _내보내기_요청(BaseModel):
+    행: list[dict]
+
+
+@app.post("/api/export/xlsx")
+def xlsx_내보내기(요청: _내보내기_요청, _인증: None = Depends(_인증_확인)):
+    df = pd.DataFrame(요청.행)
+    데이터 = 엑셀로_변환(df)
+    return Response(
+        content=데이터,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=export.xlsx"},
+    )
 
 
 from backend.app.chat import router as _채팅_라우터  # noqa: E402 (순환 임포트 방지 위해 하단 배치)

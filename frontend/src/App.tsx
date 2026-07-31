@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import './App.css'
 import {
   api,
@@ -11,11 +11,18 @@ import {
 } from './api'
 import Sidebar from './components/Sidebar'
 import ChatMain from './components/ChatMain'
+import TopNav, { type Tab } from './components/TopNav'
+
+// plotly.js가 커서(gzip 1MB+) 기본 탭(AI 채팅)에서는 안 실리도록 차트 페이지만 지연 로드한다.
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const RevenueTable = lazy(() => import('./pages/RevenueTable'))
+const Milestone = lazy(() => import('./pages/Milestone'))
 
 function App() {
   const [인증됨, set인증됨] = useState<boolean | null>(null)
   const [비밀번호, set비밀번호] = useState('')
   const [로그인에러, set로그인에러] = useState('')
+  const [탭, set탭] = useState<Tab>('AI 채팅')
 
   const [conversations, setConversations] = useState<대화[]>([])
   const [businesses, setBusinesses] = useState<사업행[]>([])
@@ -117,17 +124,29 @@ function App() {
   }
 
   return (
-    <div className="app-layout">
-      <Sidebar
-        conversations={conversations}
-        currentId={currentId}
-        businesses={businesses}
-        onSelect={setCurrentId}
-        onNew={onNew}
-        onNewWithProject={onNewWithProject}
-        onDelete={onDelete}
-      />
-      <ChatMain key={currentId} conversationId={currentId} onActivity={refreshConversations} />
+    <div className="app-shell">
+      <TopNav current={탭} onChange={set탭} />
+      <div className="app-body">
+        {탭 === 'AI 채팅' && (
+          <div className="app-layout">
+            <Sidebar
+              conversations={conversations}
+              currentId={currentId}
+              businesses={businesses}
+              onSelect={setCurrentId}
+              onNew={onNew}
+              onNewWithProject={onNewWithProject}
+              onDelete={onDelete}
+            />
+            <ChatMain key={currentId} conversationId={currentId} onActivity={refreshConversations} />
+          </div>
+        )}
+        <Suspense fallback={<p className="page-loading">불러오는 중...</p>}>
+          {탭 === '대시보드' && <Dashboard />}
+          {탭 === '매출현황 표' && <RevenueTable />}
+          {탭 === '마일스톤' && <Milestone />}
+        </Suspense>
+      </div>
     </div>
   )
 }

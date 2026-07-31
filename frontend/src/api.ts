@@ -38,16 +38,50 @@ export type 대기중_제안 = { 요약: 제안요약; action_token: string }
 
 export type 사업행 = {
   id: number
+  구분: string
   업체명: string
   용역명: string
   사업구분: string
+  담당자?: string
+  주관참여구분?: string
   사업단계: string
   진행률: number
-  담당자?: string
-  시작일?: string
-  종료일?: string
-  계약금액?: number
+  시작일?: string | null
+  종료일?: string | null
+  계약금액: number
+  기수입금액: number
+  당해년도수입금액: number
 }
+
+export type 건수행 = { 건수: number; [key: string]: unknown }
+
+export type 마감임박행 = {
+  업체명: string
+  용역명: string
+  종료일: string
+  'D-day': number
+  사업단계: string
+}
+
+export type 대시보드요약 = {
+  전체_건수: number
+  사업구분_수: number
+  구분_수: number
+  평균_진행률: number
+  올해_목표: {
+    연도: number
+    목표매출: number | null
+    실적_매출: number
+    매출_달성률: number | null
+  }
+  사업구분별_건수: 건수행[]
+  구분별_건수: 건수행[]
+  사업단계별_건수: 건수행[]
+  담당자별_건수: 건수행[]
+  마감임박: 마감임박행[]
+}
+
+export type 이력행 = { 사업_id: number; 유형: string; 내용: string; 작성일시: string }
 
 export const listConversations = () => api<대화[]>('/api/conversations')
 
@@ -81,6 +115,46 @@ export const cancelProposal = (id: number, action_token: string) =>
   })
 
 export const getBusiness = () => api<사업행[]>('/api/business')
+
+export const getDashboardSummary = () => api<대시보드요약>('/api/dashboard-summary')
+
+export const getHistory = () => api<이력행[]>('/api/history')
+
+export async function exportXlsx(행: Record<string, unknown>[], 파일명: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/export/xlsx`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 행 }),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 파일명
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function exportCsv(행: Record<string, unknown>[], 파일명: string): void {
+  if (행.length === 0) return
+  const 컬럼 = Object.keys(행[0])
+  const 줄들 = [
+    컬럼.join(','),
+    ...행.map((row) =>
+      컬럼.map((c) => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(','),
+    ),
+  ]
+  const csv = '﻿' + 줄들.join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 파일명
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 type 스트림_done = { text: string; 제안: 제안요약 | null; action_token: string | null }
 
