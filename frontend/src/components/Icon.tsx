@@ -14,6 +14,7 @@ export type IconName =
   | 'paperclip'
   | 'x'
   | 'send'
+  | 'network'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -34,6 +35,14 @@ const paths: Record<IconName, ReactNode> = {
   paperclip: <path d="M17.5 8.5 9.9 16.1a3 3 0 1 1-4.2-4.2l8.5-8.5a2 2 0 1 1 2.8 2.8l-8.1 8.1a1 1 0 1 1-1.4-1.4l7.4-7.4" />,
   x: <path d="M6 6l12 12M18 6 6 18" />,
   send: <path d="M4 12 20 4l-6 16-3-7-7-3Z" />,
+  network: (
+    <>
+      <circle cx="12" cy="5" r="2.3" />
+      <circle cx="5" cy="19" r="2.3" />
+      <circle cx="19" cy="19" r="2.3" />
+      <path d="M12 7.3v4M10.3 15.5 7 17.7M13.7 15.5 17 17.7" />
+    </>
+  ),
 }
 
 export default function Icon({ name, size = 16 }: { name: IconName; size?: number }) {

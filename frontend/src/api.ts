@@ -83,6 +83,24 @@ export type 대시보드요약 = {
 
 export type 이력행 = { 사업_id: number; 유형: string; 내용: string; 작성일시: string }
 
+export type 온톨로지_노드 = {
+  id: number
+  유형: string
+  이름: string
+  사업_id: number | null
+  생성일시: string
+}
+
+export type 온톨로지_관계 = {
+  id: number
+  출발_노드_id: number
+  도착_노드_id: number
+  관계유형: string
+  설명: string | null
+  작성자: string | null
+  생성일시: string
+}
+
 export const listConversations = () => api<대화[]>('/api/conversations')
 
 export const createConversation = (사업_id: number | null = null) =>
@@ -119,6 +137,21 @@ export const getBusiness = () => api<사업행[]>('/api/business')
 export const getDashboardSummary = () => api<대시보드요약>('/api/dashboard-summary')
 
 export const getHistory = () => api<이력행[]>('/api/history')
+
+export const getOntologyNodes = () => api<온톨로지_노드[]>('/api/ontology/nodes')
+
+export const getOntologyRelations = () => api<온톨로지_관계[]>('/api/ontology/relations')
+
+export const addOntologyRelationDirect = (node1_id: number, node2_id: number, relation_type: string) =>
+  api<{ ok: boolean }>('/api/ontology/relations/direct', {
+    method: 'POST',
+    body: JSON.stringify({ node1_id, node2_id, relation_type }),
+  })
+
+export const deleteOntologyRelation = (id: number) =>
+  api<{ ok: boolean }>(`/api/ontology/relations/${id}`, { method: 'DELETE' })
+
+export const resetOntology = () => api<{ ok: boolean }>('/api/ontology/reset', { method: 'POST' })
 
 export async function exportXlsx(행: Record<string, unknown>[], 파일명: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/export/xlsx`, {

@@ -169,5 +169,7 @@ def xlsx_내보내기(요청: _내보내기_요청, _인증: None = Depends(_인
 
 
 from backend.app.chat import router as _채팅_라우터  # noqa: E402 (순환 임포트 방지 위해 하단 배치)
+from backend.app.ontology import router as _온톨로지_라우터  # noqa: E402
 
 app.include_router(_채팅_라우터)
+app.include_router(_온톨로지_라우터)

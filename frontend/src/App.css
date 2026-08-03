@@ -1021,3 +1021,44 @@
   z-index: 5;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
+
+/* ---------- 사업 온톨로지 그래프 ---------- */
+
+.ontology-graph-box {
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ontology-graph-container {
+  width: 100%;
+  height: 460px;
+}
+
+.ontology-side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ontology-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ontology-reset-box {
+  background: var(--카드-배경);
+  box-shadow: var(--카드-그림자);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.ontology-reset-box summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}

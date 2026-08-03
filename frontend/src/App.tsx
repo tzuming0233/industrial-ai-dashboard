@@ -17,6 +17,7 @@ import TopNav, { type Tab } from './components/TopNav'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const RevenueTable = lazy(() => import('./pages/RevenueTable'))
 const Milestone = lazy(() => import('./pages/Milestone'))
+const Ontology = lazy(() => import('./pages/Ontology'))
 
 function App() {
   const [인증됨, set인증됨] = useState<boolean | null>(null)
@@ -145,6 +146,7 @@ function App() {
           {탭 === '대시보드' && <Dashboard />}
           {탭 === '매출현황 표' && <RevenueTable />}
           {탭 === '마일스톤' && <Milestone />}
+          {탭 === '사업 온톨로지' && <Ontology />}
         </Suspense>
       </div>
     </div>
