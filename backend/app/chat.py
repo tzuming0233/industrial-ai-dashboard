@@ -286,10 +286,17 @@ def _마무리(대화_id: int, 텍스트: str, 제안: dict | None, 전체_df: p
     yield _sse("done", {"text": 텍스트, "제안": _제안_요약(제안, 전체_df), "action_token": 토큰})
 
 
+def _이벤트_전달(이벤트: dict):
+    """ai_agent.질의하기_스트림()의 token/status 이벤트를 그대로 SSE로 옮긴다."""
+    if 이벤트["type"] == "token":
+        return _sse("token", {"text": 이벤트["text"]})
+    return _sse("status", {"message": 이벤트["text"]})
+
+
 def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list):
     for 이벤트 in ai_agent.질의하기_스트림(프로젝트_컨텍스트 + 질문, history=API용_기록):
-        if 이벤트["type"] == "token":
-            yield _sse("token", {"text": 이벤트["text"]})
+        if 이벤트["type"] in ("token", "status"):
+            yield _이벤트_전달(이벤트)
         else:
             yield from _마무리(대화_id, 이벤트["text"], 이벤트.get("pending_action"))
 
@@ -315,8 +322,8 @@ def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_�
         f"[사용자 질문]\n{질문 or '이 문서 내용을 요약해줘.'}"
     )
     for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록):
-        if 이벤트["type"] == "token":
-            yield _sse("token", {"text": 이벤트["text"]})
+        if 이벤트["type"] in ("token", "status"):
+            yield _이벤트_전달(이벤트)
         else:
             yield from _마무리(대화_id, 이벤트["text"], 이벤트.get("pending_action"))
 
@@ -339,8 +346,8 @@ def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨�
     최종_텍스트 = ""
     제안 = None
     for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록):
-        if 이벤트["type"] == "token":
-            yield _sse("token", {"text": 이벤트["text"]})
+        if 이벤트["type"] in ("token", "status"):
+            yield _이벤트_전달(이벤트)
         else:
             최종_텍스트 = 이벤트["text"]
             제안 = 이벤트.get("pending_action")

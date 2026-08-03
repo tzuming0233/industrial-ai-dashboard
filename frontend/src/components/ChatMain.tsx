@@ -90,7 +90,10 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
       질문,
       파일,
       {
-        onToken: (text) => setStreamingText((prev) => prev + text),
+        onToken: (text) => {
+          setStreamingText((prev) => prev + text)
+          setStreamingStatus(null)
+        },
         onStatus: (message) => setStreamingStatus(message),
         onDone: (data) => {
           setIsStreaming(false)
@@ -184,10 +187,16 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
 
         {isStreaming && (
           <div className="assistant-text">
+            {streamingStatus && (
+              <p className="typing-indicator typing-indicator-status">
+                <span className="typing-dot" />
+                {streamingStatus}
+              </p>
+            )}
             {streamingText ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
             ) : (
-              <span className="typing-indicator">{streamingStatus || 'AI가 답변을 생성 중...'}</span>
+              !streamingStatus && <span className="typing-indicator">AI가 답변을 생성 중...</span>
             )}
           </div>
         )}

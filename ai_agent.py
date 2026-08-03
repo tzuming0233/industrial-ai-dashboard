@@ -300,6 +300,19 @@ TOOLS = [
     "import_uploaded_file_as_data", "propose_delete_relations",
 }
 
+# 스트리밍 중 "지금 뭘 하고 있는지" 화면에 보여주기 위한 도구별 상태 문구.
+_도구_상태_문구 = {
+    "query_business_status": "사업현황을 조회하는 중...",
+    "search_past_conversations": "과거 대화를 검색하는 중...",
+    "query_ontology": "온톨로지를 조회하는 중...",
+    "propose_add_business": "추가할 내용을 정리하는 중...",
+    "propose_update_business": "수정할 내용을 정리하는 중...",
+    "propose_delete_business": "삭제 대상을 정리하는 중...",
+    "propose_add_relations": "추가할 관계를 정리하는 중...",
+    "propose_delete_relations": "삭제할 관계를 정리하는 중...",
+    "import_uploaded_file_as_data": "업로드한 파일을 반영할 준비를 하는 중...",
+}
+
 
 def _텍스트_추출(response) -> str:
     """Anthropic 응답의 content 블록들 중 text 타입만 이어붙인다."""
@@ -666,7 +679,11 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
     messages = list(history or []) + [{"role": "user", "content": question}]
 
     대기중_제안 = None
-    for _ in range(5):  # 도구 호출 반복 상한
+    for 회차 in range(5):  # 도구 호출 반복 상한
+        yield {
+            "type": "status",
+            "text": "요청을 확인하는 중..." if 회차 == 0 else "조회 결과를 반영해서 답변을 정리하는 중...",
+        }
         with client.messages.stream(
             model=MODEL_NAME, max_tokens=4096, system=SYSTEM_PROMPT, messages=messages, tools=TOOLS,
         ) as stream:
@@ -684,6 +701,7 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
         for block in response.content:
             if block.type != "tool_use":
                 continue
+            yield {"type": "status", "text": _도구_상태_문구.get(block.name, f"{block.name} 실행 중...")}
             도구_인자 = _도구_인자_한글화(block.name, block.input or {})
             결과 = _도구_실행(block.name, 도구_인자)
             if block.name in 제안_도구명들:
