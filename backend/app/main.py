@@ -5,6 +5,7 @@ DB 스키마/쿼리 로직은 이 파일에서 새로 만들지 않는다.
 """
 
 import os
+import sqlite3
 from pathlib import Path
 from urllib.parse import quote
 
@@ -40,6 +41,7 @@ app.add_middleware(
 def _시작시_DB_준비():
     repo.DB_준비()
     repo.사업현황_컬럼_보강()
+    repo.계정_DB_준비()
     repo.채팅_DB_준비()
     repo.이력_DB_준비()
     repo.온톨로지_DB_준비()
@@ -49,18 +51,21 @@ def _시작시_DB_준비():
     repo.생성파일_DB_준비()
 
 
+class 회원가입_요청(BaseModel):
+    이름: str
+    비밀번호: str
+
+
 class 로그인_요청(BaseModel):
-    password: str
+    이름: str
+    비밀번호: str
 
 
 _인증_확인 = auth.인증_확인
 
 
-@app.post("/api/login")
-def 로그인(요청: 로그인_요청, response: Response):
-    if not auth.비밀번호_확인(요청.password):
-        raise HTTPException(status_code=401, detail="비밀번호가 올바르지 않습니다.")
-    토큰 = auth.세션_토큰_발급()
+def _세션_쿠키_설정(response: Response, 사용자_id: int, 이름: str) -> None:
+    토큰 = auth.세션_토큰_발급(사용자_id, 이름)
     response.set_cookie(
         key=auth.COOKIE_NAME,
         value=토큰,
@@ -70,7 +75,30 @@ def 로그인(요청: 로그인_요청, response: Response):
         samesite="lax",
         domain=_쿠키_도메인,
     )
-    return {"ok": True}
+
+
+@app.post("/api/signup")
+def 회원가입(요청: 회원가입_요청, response: Response):
+    이름 = 요청.이름.strip()
+    if not 이름:
+        raise HTTPException(status_code=400, detail="이름을 입력해주세요.")
+    if len(요청.비밀번호) < 4:
+        raise HTTPException(status_code=400, detail="비밀번호는 4자 이상이어야 합니다.")
+    try:
+        사용자_id = repo.계정_생성(이름, auth.비밀번호_해시(요청.비밀번호))
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="이미 사용 중인 이름입니다.")
+    _세션_쿠키_설정(response, 사용자_id, 이름)
+    return {"ok": True, "이름": 이름}
+
+
+@app.post("/api/login")
+def 로그인(요청: 로그인_요청, response: Response):
+    계정 = repo.계정_이름으로_조회(요청.이름.strip())
+    if not 계정 or not auth.비밀번호_검증(요청.비밀번호, 계정["비밀번호_해시"]):
+        raise HTTPException(status_code=401, detail="이름 또는 비밀번호가 올바르지 않습니다.")
+    _세션_쿠키_설정(response, 계정["id"], 계정["이름"])
+    return {"ok": True, "이름": 계정["이름"]}
 
 
 @app.post("/api/logout")
@@ -81,7 +109,8 @@ def 로그아웃(response: Response):
 
 @app.get("/api/me")
 def 내_세션(kpc_session: str | None = Cookie(default=None)):
-    return {"인증됨": auth.세션_토큰_검증(kpc_session)}
+    세션 = auth.세션_정보(kpc_session)
+    return {"인증됨": 세션 is not None, "이름": 세션["이름"] if 세션 else None}
 
 
 def _NaN_정리(df: pd.DataFrame) -> pd.DataFrame:

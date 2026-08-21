@@ -18,7 +18,7 @@ import uuid
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -265,39 +265,52 @@ class _대화_생성_요청(BaseModel):
     사업_id: int | None = None
 
 
+def _소유권_확인(대화_id: int, 사용자_id: int) -> dict:
+    """다른 계정 소유의 대화 id를 추측해 조회/삭제/스트리밍하는 걸 막는다.
+
+    사용자_id가 NULL인 대화는 계정 도입 이전(레거시)의 대화라 모두에게 열려있다."""
+    대화 = repo.대화_조회(대화_id)
+    if not 대화:
+        raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
+    if 대화["사용자_id"] is not None and 대화["사용자_id"] != 사용자_id:
+        raise HTTPException(status_code=403, detail="다른 계정의 대화입니다.")
+    return 대화
+
+
 @router.get("/api/conversations")
-def 대화_목록():
+def 대화_목록(사용자: dict = Depends(auth.현재_사용자)):
     전체_df = repo.사업현황_불러오기()
     라벨_맵 = _사업_라벨_맵(전체_df)
-    목록 = repo.대화_목록_불러오기()
+    목록 = repo.대화_목록_불러오기(사용자["id"])
     for d in 목록:
         d["사업_라벨"] = 라벨_맵.get(d.get("사업_id")) if d.get("사업_id") else None
     return 목록
 
 
 @router.post("/api/conversations")
-def 대화_생성_엔드포인트(요청: _대화_생성_요청):
-    return {"id": repo.대화_생성(사업_id=요청.사업_id)}
+def 대화_생성_엔드포인트(요청: _대화_생성_요청, 사용자: dict = Depends(auth.현재_사용자)):
+    return {"id": repo.대화_생성(사업_id=요청.사업_id, 사용자_id=사용자["id"])}
 
 
 @router.delete("/api/conversations/{conversation_id}")
-def 대화_삭제_엔드포인트(conversation_id: int):
+def 대화_삭제_엔드포인트(conversation_id: int, 사용자: dict = Depends(auth.현재_사용자)):
     # Starlette의 경로 파라미터 매칭 정규식이 ASCII만 인식해서(Anthropic tool_use의
     # input_schema 키 제약과 같은 종류의 제약) URL 경로 파라미터명만 영문으로 쓰고,
     # 나머지 내부 로직은 기존처럼 한글 변수명을 그대로 쓴다.
     대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
     repo.대화_삭제(대화_id)
     _대기중_제안.pop(대화_id, None)
     return {"ok": True}
 
 
 @router.get("/api/conversations/{conversation_id}/messages")
-def 대화_메시지(conversation_id: int):
+def 대화_메시지(conversation_id: int, 사용자: dict = Depends(auth.현재_사용자)):
     대화_id = conversation_id
+    현재_대화 = _소유권_확인(대화_id, 사용자["id"])
     전체_df = repo.사업현황_불러오기()
     라벨_맵 = _사업_라벨_맵(전체_df)
-    현재_대화 = next((d for d in repo.대화_목록_불러오기() if d["id"] == 대화_id), None)
-    연결된_사업_id = 현재_대화.get("사업_id") if 현재_대화 else None
+    연결된_사업_id = 현재_대화.get("사업_id")
     보류중 = _대기중_제안.get(대화_id)
     return {
         "메시지": repo.채팅기록_불러오기(대화_id),
@@ -318,8 +331,9 @@ class _제안_처리_요청(BaseModel):
 
 
 @router.post("/api/conversations/{conversation_id}/proposal/apply")
-def 제안_적용(conversation_id: int, 요청: _제안_처리_요청):
+def 제안_적용(conversation_id: int, 요청: _제안_처리_요청, 사용자: dict = Depends(auth.현재_사용자)):
     대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
     보류중 = _대기중_제안.get(대화_id)
     if not 보류중 or 보류중["token"] != 요청.action_token:
         return {"적용됨": False, "메시지": "이미 처리되었거나 만료된 제안입니다."}
@@ -335,8 +349,9 @@ def 제안_적용(conversation_id: int, 요청: _제안_처리_요청):
 
 
 @router.post("/api/conversations/{conversation_id}/proposal/cancel")
-def 제안_취소(conversation_id: int, 요청: _제안_처리_요청):
+def 제안_취소(conversation_id: int, 요청: _제안_처리_요청, 사용자: dict = Depends(auth.현재_사용자)):
     대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
     보류중 = _대기중_제안.get(대화_id)
     if not 보류중 or 보류중["token"] != 요청.action_token:
         return {"취소됨": False}
@@ -469,8 +484,14 @@ def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨�
 
 
 @router.post("/api/conversations/{conversation_id}/messages/stream")
-async def 메시지_스트림(conversation_id: int, message: str = Form(""), file: UploadFile | None = File(None)):
+async def 메시지_스트림(
+    conversation_id: int,
+    message: str = Form(""),
+    file: UploadFile | None = File(None),
+    사용자: dict = Depends(auth.현재_사용자),
+):
     대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
     질문 = (message or "").strip()
     첨부 = None
     if file is not None and file.filename:
@@ -489,7 +510,7 @@ async def 메시지_스트림(conversation_id: int, message: str = Form(""), fil
             repo.대화_제목_설정(대화_id, ai_agent.대화_제목_생성(표시_메시지))
 
     전체_df = repo.사업현황_불러오기()
-    현재_대화 = next((d for d in repo.대화_목록_불러오기() if d["id"] == 대화_id), None)
+    현재_대화 = repo.대화_조회(대화_id)
     연결된_사업_id = 현재_대화.get("사업_id") if 현재_대화 else None
     프로젝트_컨텍스트 = _프로젝트_컨텍스트(연결된_사업_id, 전체_df)
     API용_기록 = _API용_기록_구성(대화_id, 이전_기록)

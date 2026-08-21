@@ -136,6 +136,16 @@
   font-weight: 600;
 }
 
+.top-nav-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--보조텍스트색);
+  white-space: nowrap;
+}
+
 /* ---------- 읽기전용 페이지 공용(대시보드/표/마일스톤) ---------- */
 
 .page {

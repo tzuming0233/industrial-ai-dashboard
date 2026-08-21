@@ -12,6 +12,30 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return res.json()
 }
 
+// 회원가입/로그인은 실패 사유(이름 중복 409, 비밀번호 불일치 401 등)를 화면에
+// 그대로 보여줘야 해서, 공용 api()가 버리는 응답 본문의 detail을 직접 읽는다.
+async function _인증_요청(path: string, 이름: string, 비밀번호: string): Promise<{ ok: boolean; 이름: string }> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 이름, 비밀번호 }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail || `${res.status} ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export const signup = (이름: string, 비밀번호: string) => _인증_요청('/api/signup', 이름, 비밀번호)
+
+export const login = (이름: string, 비밀번호: string) => _인증_요청('/api/login', 이름, 비밀번호)
+
+export const logout = () => api<{ ok: boolean }>('/api/logout', { method: 'POST' })
+
+export const getMe = () => api<{ 인증됨: boolean; 이름: string | null }>('/api/me')
+
 export type 대화 = {
   id: number
   제목: string | null

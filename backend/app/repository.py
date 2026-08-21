@@ -114,7 +114,53 @@ def 채팅_DB_준비():
             conn.execute("ALTER TABLE 대화 ADD COLUMN 요약 TEXT")
         if "요약_메시지수" not in 기존_대화_컬럼:
             conn.execute("ALTER TABLE 대화 ADD COLUMN 요약_메시지수 INTEGER DEFAULT 0")
+        # 계정 도입 이전에 만들어진 대화는 사용자_id가 NULL로 남는다 — 특정 계정에
+        # 억지로 귀속시키지 않고, 조회 시 "누구에게나 보이는 레거시 대화"로 취급한다.
+        if "사용자_id" not in 기존_대화_컬럼:
+            conn.execute("ALTER TABLE 대화 ADD COLUMN 사용자_id INTEGER")
         conn.commit()
+    finally:
+        conn.close()
+
+
+def 계정_DB_준비():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 계정 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                이름 TEXT UNIQUE NOT NULL,
+                비밀번호_해시 TEXT NOT NULL,
+                생성일시 TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def 계정_생성(이름: str, 비밀번호_해시: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        cur = conn.execute(
+            "INSERT INTO 계정 (이름, 비밀번호_해시, 생성일시) VALUES (?, ?, ?)",
+            (이름, 비밀번호_해시, 지금),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def 계정_이름으로_조회(이름: str) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM 계정 WHERE 이름 = ?", (이름,)).fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()
 
@@ -415,25 +461,40 @@ def 이력_저장(사업_id: int, 유형: str, 내용: str, 작성자: str, 사�
     전체_이력_불러오기.clear()
 
 
-def 대화_목록_불러오기() -> list[dict]:
+def 대화_목록_불러오기(사용자_id: int | None = None) -> list[dict]:
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id FROM 대화 ORDER BY 마지막_활동일시 DESC"
+            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id FROM 대화 "
+            "WHERE 사용자_id = ? OR 사용자_id IS NULL ORDER BY 마지막_활동일시 DESC",
+            (사용자_id,),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
 
 
-def 대화_생성(사업_id: int | None = None) -> int:
+def 대화_조회(대화_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id FROM 대화 WHERE id = ?",
+            (대화_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def 대화_생성(사업_id: int | None = None, 사용자_id: int | None = None) -> int:
     conn = sqlite3.connect(DB_PATH)
     try:
         지금 = _dt.datetime.now().isoformat(timespec="seconds")
         cur = conn.execute(
-            "INSERT INTO 대화 (제목, 생성일시, 마지막_활동일시, 사업_id) VALUES (?, ?, ?, ?)",
-            (None, 지금, 지금, 사업_id),
+            "INSERT INTO 대화 (제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id) VALUES (?, ?, ?, ?, ?)",
+            (None, 지금, 지금, 사업_id, 사용자_id),
         )
         conn.commit()
         return cur.lastrowid

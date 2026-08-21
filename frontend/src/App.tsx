@@ -1,11 +1,14 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import './App.css'
 import {
-  api,
   createConversation,
   deleteConversation,
+  getMe,
   listConversations,
+  login,
+  logout,
   getBusiness,
+  signup,
   type 대화,
   type 사업행,
 } from './api'
@@ -22,6 +25,9 @@ const DataManagement = lazy(() => import('./pages/DataManagement'))
 
 function App() {
   const [인증됨, set인증됨] = useState<boolean | null>(null)
+  const [내_이름, set내_이름] = useState<string | null>(null)
+  const [모드, set모드] = useState<'로그인' | '회원가입'>('로그인')
+  const [이름_입력, set이름_입력] = useState('')
   const [비밀번호, set비밀번호] = useState('')
   const [로그인에러, set로그인에러] = useState('')
   const [탭, set탭] = useState<Tab>('AI 채팅')
@@ -34,10 +40,19 @@ function App() {
   // 탭(예: 위키의 그래프 뷰)이 DB 변경을 놓치지 않고 다시 불러오게 하는 공용 신호.
   const [데이터_갱신_신호, set데이터_갱신_신호] = useState(0)
 
+  async function 내_세션_불러오기() {
+    try {
+      const r = await getMe()
+      set인증됨(r.인증됨)
+      set내_이름(r.이름)
+    } catch {
+      set인증됨(false)
+      set내_이름(null)
+    }
+  }
+
   useEffect(() => {
-    api<{ 인증됨: boolean }>('/api/me')
-      .then((r) => set인증됨(r.인증됨))
-      .catch(() => set인증됨(false))
+    내_세션_불러오기()
   }, [])
 
   useEffect(() => {
@@ -88,15 +103,20 @@ function App() {
     }
   }
 
-  const 로그인 = async (e: React.FormEvent) => {
+  const 로그인또는가입 = async (e: React.FormEvent) => {
     e.preventDefault()
     set로그인에러('')
     try {
-      await api('/api/login', { method: 'POST', body: JSON.stringify({ password: 비밀번호 }) })
-      set인증됨(true)
-    } catch {
-      set로그인에러('비밀번호가 올바르지 않습니다.')
+      await (모드 === '로그인' ? login : signup)(이름_입력.trim(), 비밀번호)
+      await 내_세션_불러오기()
+    } catch (err) {
+      set로그인에러(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  async function 로그아웃() {
+    await logout()
+    window.location.reload()
   }
 
   if (인증됨 === null) return <p style={{ padding: 24 }}>확인 중...</p>
@@ -106,16 +126,41 @@ function App() {
       <div className="login-page">
         <div className="login-card">
           <h2>산업AI팀 사업 통합관리</h2>
-          <form onSubmit={로그인}>
+          <div className="segmented" style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              className={`segmented-item ${모드 === '로그인' ? 'segmented-item-active' : ''}`}
+              onClick={() => { set모드('로그인'); set로그인에러('') }}
+            >
+              로그인
+            </button>
+            <button
+              type="button"
+              className={`segmented-item ${모드 === '회원가입' ? 'segmented-item-active' : ''}`}
+              onClick={() => { set모드('회원가입'); set로그인에러('') }}
+            >
+              회원가입
+            </button>
+          </div>
+          <form onSubmit={로그인또는가입}>
+            <input
+              type="text"
+              className="text-input"
+              value={이름_입력}
+              onChange={(e) => set이름_입력(e.target.value)}
+              placeholder="이름"
+              autoComplete="username"
+            />
             <input
               type="password"
               className="text-input"
               value={비밀번호}
               onChange={(e) => set비밀번호(e.target.value)}
               placeholder="비밀번호"
+              autoComplete={모드 === '로그인' ? 'current-password' : 'new-password'}
             />
             <button type="submit" className="btn btn-primary btn-block">
-              로그인
+              {모드}
             </button>
           </form>
           {로그인에러 && <p className="proposal-error">{로그인에러}</p>}
@@ -132,7 +177,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <TopNav current={탭} onChange={set탭} />
+      <TopNav current={탭} onChange={set탭} 사용자_이름={내_이름} onLogout={로그아웃} />
       <div className="app-body">
         {AI채팅_탭 ? (
           <Sidebar

@@ -16,9 +16,11 @@ const 탭_목록: Tab[] = ['AI 채팅', '대시보드', '매출현황 표', '마
 type Props = {
   current: Tab
   onChange: (tab: Tab) => void
+  사용자_이름?: string | null
+  onLogout?: () => void
 }
 
-export default function TopNav({ current, onChange }: Props) {
+export default function TopNav({ current, onChange, 사용자_이름, onLogout }: Props) {
   return (
     <div className="top-nav">
       <span className="top-nav-title">산업AI팀 사업 통합관리</span>
@@ -34,6 +36,14 @@ export default function TopNav({ current, onChange }: Props) {
           </button>
         ))}
       </div>
+      {사용자_이름 && (
+        <div className="top-nav-account">
+          <span>{사용자_이름}님</span>
+          <button className="btn btn-secondary" onClick={onLogout}>
+            로그아웃
+          </button>
+        </div>
+      )}
     </div>
   )
 }

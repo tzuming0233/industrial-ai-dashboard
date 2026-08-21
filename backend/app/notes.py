@@ -47,8 +47,8 @@ def 노트_목록():
 
 
 @router.post("")
-def 노트_생성(요청: _노트_생성_요청):
-    새_id = repo.노트_생성(요청.제목, 요청.내용, 요청.태그)
+def 노트_생성(요청: _노트_생성_요청, 사용자: dict = Depends(auth.현재_사용자)):
+    새_id = repo.노트_생성(요청.제목, 요청.내용, 요청.태그, 작성자=사용자["이름"])
     _노트_재임베딩(새_id, 요청.제목, 요청.내용)
     return {"id": 새_id}
 
@@ -62,9 +62,9 @@ def 노트_상세(note_id: int):
 
 
 @router.put("/{note_id}")
-def 노트_수정(note_id: int, 요청: _노트_수정_요청):
+def 노트_수정(note_id: int, 요청: _노트_수정_요청, 사용자: dict = Depends(auth.현재_사용자)):
     변경필드 = {k: v for k, v in 요청.model_dump().items() if v is not None}
-    repo.노트_수정(note_id, 변경필드)
+    repo.노트_수정(note_id, 변경필드, 작성자=사용자["이름"])
     if "제목" in 변경필드 or "내용" in 변경필드:
         최신 = repo.노트_불러오기(note_id)
         if 최신:
@@ -78,14 +78,14 @@ def 노트_버전_목록(note_id: int):
 
 
 @router.post("/{note_id}/versions/{version_id}/restore")
-def 노트_버전_복원(note_id: int, version_id: int):
+def 노트_버전_복원(note_id: int, version_id: int, 사용자: dict = Depends(auth.현재_사용자)):
     버전 = repo.노트_버전_불러오기(version_id)
     if not 버전 or 버전.get("노트_id") != note_id:
         raise HTTPException(status_code=404, detail="해당 버전을 찾을 수 없습니다.")
     repo.노트_수정(
         note_id,
         {"제목": 버전["제목"], "내용": 버전["내용"], "태그": 버전["태그"]},
-        작성자=f"{버전['작성자']} 버전 복원",
+        작성자=f"{사용자['이름']} 버전 복원",
     )
     최신 = repo.노트_불러오기(note_id)
     if 최신:
