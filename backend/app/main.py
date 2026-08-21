@@ -171,6 +171,9 @@ def xlsx_내보내기(요청: _내보내기_요청, _인증: None = Depends(_인
     )
 
 
+_미리보기_가능_mime타입 = {"text/html", "image/svg+xml"}
+
+
 @app.get("/api/files/{file_id}")
 def 생성파일_다운로드(file_id: int, _인증: None = Depends(_인증_확인)):
     파일 = repo.생성파일_불러오기(file_id)
@@ -179,10 +182,13 @@ def 생성파일_다운로드(file_id: int, _인증: None = Depends(_인증_확�
     # 파일명이 한글일 수 있어 RFC 5987(filename*=UTF-8''...)로 인코딩 — 그냥 filename=만 쓰면
     # 브라우저/프록시에 따라 비ASCII 문자가 깨질 수 있다.
     인코딩된_파일명 = quote(파일["파일명"])
+    # HTML/SVG처럼 브라우저가 직접 렌더링할 수 있는 형식은 강제 다운로드(attachment) 대신
+    # inline으로 내려서 새 탭에서 바로 보이게 한다(Claude.ai 아티팩트 미리보기와 같은 경험).
+    처분방식 = "inline" if 파일["mime타입"] in _미리보기_가능_mime타입 else "attachment"
     return Response(
         content=파일["내용"],
         media_type=파일["mime타입"] or "application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{인코딩된_파일명}"},
+        headers={"Content-Disposition": f"{처분방식}; filename*=UTF-8''{인코딩된_파일명}"},
     )
 
 

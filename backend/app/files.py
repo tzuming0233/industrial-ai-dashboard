@@ -139,6 +139,7 @@ _MIME_타입_맵 = {
     "csv": "text/csv",
     "json": "application/json",
     "html": "text/html",
+    "svg": "image/svg+xml",
     "md": "text/markdown",
     "py": "text/x-python",
     "js": "text/javascript",

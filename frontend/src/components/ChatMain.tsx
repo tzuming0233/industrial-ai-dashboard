@@ -197,14 +197,28 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
         )}
 
         {!isStreaming && 최근_생성파일 && (
-          <a
-            className="generated-file-chip"
-            href={fileDownloadUrl(최근_생성파일.id)}
-            download={최근_생성파일.파일명}
-          >
-            <Icon name="download" size={14} />
-            {최근_생성파일.파일명}
-          </a>
+          <>
+            {['text/html', 'image/svg+xml'].includes(최근_생성파일.mime타입) ? (
+              <a
+                className="generated-file-chip"
+                href={fileDownloadUrl(최근_생성파일.id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Icon name="sparkles" size={14} />
+                {최근_생성파일.파일명} 미리보기 (새 탭)
+              </a>
+            ) : (
+              <a
+                className="generated-file-chip"
+                href={fileDownloadUrl(최근_생성파일.id)}
+                download={최근_생성파일.파일명}
+              >
+                <Icon name="download" size={14} />
+                {최근_생성파일.파일명}
+              </a>
+            )}
+          </>
         )}
 
         {isStreaming && (
