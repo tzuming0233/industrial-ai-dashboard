@@ -4,9 +4,11 @@ import {
   createNote,
   deleteOntologyRelation,
   getBusiness,
+  getNote,
   getOntologyNodes,
   getOntologyRelations,
   resetOntology,
+  type 노트,
   type 사업행,
   type 온톨로지_관계,
   type 온톨로지_노드,
@@ -38,6 +40,8 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
   const [선택된_사업id, set선택된_사업id] = useState<number[]>([])
   const [필터_열림, set필터_열림] = useState(false)
   const [필터_검색어, set필터_검색어] = useState('')
+  const [선택된_관계유형, set선택된_관계유형] = useState<string[]>([])
+  const [노트_미리보기_캐시, set노트_미리보기_캐시] = useState<Record<number, 노트>>({})
 
   const [클릭된_엣지id, set클릭된_엣지id] = useState<number | null>(null)
   const [클릭된_노드id, set클릭된_노드id] = useState<number | null>(null)
@@ -81,14 +85,21 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
     return q ? 사업_라벨_목록.filter((b) => b.라벨.toLowerCase().includes(q)) : 사업_라벨_목록
   }, [사업_라벨_목록, 필터_검색어])
 
+  const 관계유형_전체목록 = useMemo(
+    () => [...new Set(relations.map((r) => r.관계유형))].sort(),
+    [relations],
+  )
+
   const { 표시할_관계, 강조_노드id_집합 } = useMemo(() => {
-    if (선택된_사업id.length === 0) return { 표시할_관계: relations, 강조_노드id_집합: new Set<number>() }
-    const 강조 = new Set(nodes.filter((n) => n.사업_id && 선택된_사업id.includes(n.사업_id)).map((n) => n.id))
-    const 관계 = 강조.size
-      ? relations.filter((r) => 강조.has(r.출발_노드_id) || 강조.has(r.도착_노드_id))
-      : []
+    let 기본 = relations
+    let 강조 = new Set<number>()
+    if (선택된_사업id.length > 0) {
+      강조 = new Set(nodes.filter((n) => n.사업_id && 선택된_사업id.includes(n.사업_id)).map((n) => n.id))
+      기본 = 강조.size ? relations.filter((r) => 강조.has(r.출발_노드_id) || 강조.has(r.도착_노드_id)) : []
+    }
+    const 관계 = 선택된_관계유형.length > 0 ? 기본.filter((r) => 선택된_관계유형.includes(r.관계유형)) : 기본
     return { 표시할_관계: 관계, 강조_노드id_집합: 강조 }
-  }, [nodes, relations, 선택된_사업id])
+  }, [nodes, relations, 선택된_사업id, 선택된_관계유형])
 
   const 표시할_노드 = useMemo(() => {
     const 연결된 = new Set([...표시할_관계.map((r) => r.출발_노드_id), ...표시할_관계.map((r) => r.도착_노드_id)])
@@ -103,17 +114,19 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
     () =>
       표시할_노드.map((n) => {
         const 강조됨 = 강조_노드id_집합.has(n.id)
+        const 노트_내용 = n.노트_id != null ? 노트_미리보기_캐시[n.노트_id]?.내용 : null
+        const 미리보기 = 노트_내용 ? `\n${노트_내용.slice(0, 120)}${노트_내용.length > 120 ? '...' : ''}` : ''
         return {
           id: n.id,
           label: 노드_표시라벨(n.이름, n.유형),
-          title: `${n.유형}: ${n.이름}`,
+          title: `${n.유형}: ${n.이름}${미리보기}`,
           color: 유형_팔레트[n.유형] ?? 보조텍스트색,
           shape: n.유형 === '사업' ? 'box' : 'dot',
           size: 강조됨 ? 34 : 22,
           borderWidth: 강조됨 ? 3 : 1,
         }
       }),
-    [표시할_노드, 강조_노드id_집합, 유형_팔레트],
+    [표시할_노드, 강조_노드id_집합, 유형_팔레트, 노트_미리보기_캐시],
   )
 
   const 그래프_엣지들: 그래프_엣지[] = useMemo(
@@ -136,8 +149,35 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
       .map((r) => ({ 관계: r, 출발_노드: 노드_이름맵.get(r.출발_노드_id) }))
   }, [relations, 클릭된_노드id, 노드_이름맵])
 
+  const 클릭된_엣지 = 클릭된_엣지id !== null ? relations.find((r) => r.id === 클릭된_엣지id) ?? null : null
+  const 클릭된_노드 = 클릭된_노드id !== null ? 노드_이름맵.get(클릭된_노드id) ?? null : null
+
+  // 그래프에 보이는 노트 노드들의 본문을, 클릭해서 미리보기를 열거나 hover 툴팁에
+  // 쓸 수 있도록 한 번에 미리 받아둔다(이 앱 규모의 노트 수에서는 부담 없음).
+  useEffect(() => {
+    const 필요한_id들 = [
+      ...new Set(
+        nodes
+          .filter((n) => n.유형 === '노트' && n.노트_id != null && !(n.노트_id in 노트_미리보기_캐시))
+          .map((n) => n.노트_id as number),
+      ),
+    ]
+    if (필요한_id들.length === 0) return
+    Promise.all(필요한_id들.map((id) => getNote(id).then((n) => [id, n] as const))).then((결과들) => {
+      set노트_미리보기_캐시((prev) => {
+        const 다음 = { ...prev }
+        for (const [id, n] of 결과들) 다음[id] = n
+        return 다음
+      })
+    })
+  }, [nodes, 노트_미리보기_캐시])
+
   function 사업_토글(id: number) {
     set선택된_사업id((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  function 관계유형_토글(t: string) {
+    set선택된_관계유형((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))
   }
 
   async function 관계_삭제_실행() {
@@ -194,9 +234,6 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
 
   if (loading) return <p className="page-loading">불러오는 중...</p>
 
-  const 클릭된_엣지 = 클릭된_엣지id !== null ? relations.find((r) => r.id === 클릭된_엣지id) : null
-  const 클릭된_노드 = 클릭된_노드id !== null ? 노드_이름맵.get(클릭된_노드id) : null
-
   return (
     <div className="page">
       <p className="sidebar-caption">
@@ -236,6 +273,25 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
         )}
       </div>
 
+      {관계유형_전체목록.length > 0 && (
+        <div className="tag-chip-row">
+          {관계유형_전체목록.map((t) => (
+            <button
+              key={t}
+              className={`tag-chip ${선택된_관계유형.includes(t) ? 'tag-chip-active' : ''}`}
+              onClick={() => 관계유형_토글(t)}
+            >
+              {t}
+            </button>
+          ))}
+          {선택된_관계유형.length > 0 && (
+            <button className="tag-chip" onClick={() => set선택된_관계유형([])}>
+              필터 초기화
+            </button>
+          )}
+        </div>
+      )}
+
       {nodes.length === 0 || 표시할_관계.length === 0 ? (
         <div className="alert alert-info">
           {선택된_사업id.length > 0
@@ -258,6 +314,12 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
               onEdgeClick={(id) => {
                 set클릭된_엣지id(id)
                 set클릭된_노드id(null)
+              }}
+              onDragConnect={(fromId, toId) => {
+                set클릭된_노드id(fromId)
+                set연결대상id(toId)
+                set관계유형입력('')
+                set클릭된_엣지id(null)
               }}
             />
           </div>
@@ -284,14 +346,26 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
               <p>
                 선택한 노드: <b>{클릭된_노드.이름}</b> ({클릭된_노드.유형}) — 다른 노드와 연결해보세요.
               </p>
-              {클릭된_노드.노트_id != null && onOpenNote && (
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => onOpenNote(클릭된_노드.노트_id as number)}
-                >
-                  <Icon name="book" size={14} />
-                  노트 열기
-                </button>
+              {클릭된_노드.노트_id != null && (
+                <div className="ontology-note-preview">
+                  {노트_미리보기_캐시[클릭된_노드.노트_id] ? (
+                    <p>
+                      {(노트_미리보기_캐시[클릭된_노드.노트_id].내용 || '(내용 없음)').slice(0, 300)}
+                      {(노트_미리보기_캐시[클릭된_노드.노트_id].내용 || '').length > 300 ? '...' : ''}
+                    </p>
+                  ) : (
+                    <p className="sidebar-caption">노트 미리보기를 불러오는 중...</p>
+                  )}
+                  {onOpenNote && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => onOpenNote(클릭된_노드.노트_id as number)}
+                    >
+                      <Icon name="book" size={14} />
+                      전체 노트에서 편집
+                    </button>
+                  )}
+                </div>
               )}
               {클릭된_노드.노트_id == null && 클릭된_노드.유형 === '노트' && onOpenNote && (
                 <button className="btn btn-secondary" disabled={노트_생성중} onClick={팬텀_노트_생성_실행}>

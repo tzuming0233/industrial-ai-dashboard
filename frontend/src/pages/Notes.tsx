@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -7,14 +7,19 @@ import {
   getNote,
   getNotes,
   getNoteVersions,
+  getOntologyNodes,
+  getOntologyRelations,
   organizeNote,
   restoreNoteVersion,
   updateNote,
   type 노트,
   type 노트_버전행,
   type 노트_요약,
+  type 온톨로지_관계,
+  type 온톨로지_노드,
 } from '../api'
 import Icon from '../components/Icon'
+import OntologyGraph, { type 그래프_노드, type 그래프_엣지 } from '../components/OntologyGraph'
 import OntologyView from '../components/OntologyView'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
@@ -64,6 +69,9 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
   const [이력_열림, set이력_열림] = useState(false)
   const [복원중, set복원중] = useState<number | null>(null)
 
+  const [온톨로지_노드_목록, set온톨로지_노드_목록] = useState<온톨로지_노드[]>([])
+  const [온톨로지_관계_목록, set온톨로지_관계_목록] = useState<온톨로지_관계[]>([])
+
   const { 지원됨: 음성지원, 듣는중, 토글: 음성_토글 } = useSpeechRecognition((text) => {
     set내용_입력((prev) => (prev ? `${prev} ${text}` : text))
   })
@@ -77,6 +85,25 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
   useEffect(() => {
     목록_새로고침().finally(() => setLoading(false))
   }, [])
+
+  async function 온톨로지_새로고침() {
+    const [n, r] = await Promise.all([getOntologyNodes(), getOntologyRelations()])
+    set온톨로지_노드_목록(n)
+    set온톨로지_관계_목록(r)
+  }
+
+  useEffect(() => {
+    온톨로지_새로고침()
+  }, [])
+
+  const 온톨로지_첫_렌더_완료 = useRef(false)
+  useEffect(() => {
+    if (!온톨로지_첫_렌더_완료.current) {
+      온톨로지_첫_렌더_완료.current = true
+      return
+    }
+    온톨로지_새로고침()
+  }, [데이터_갱신_신호])
 
   useEffect(() => {
     if (선택id === null) {
@@ -99,6 +126,41 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
       .finally(() => set상세_로딩(false))
     getNoteVersions(선택id).then(set버전목록)
   }, [선택id])
+
+  const 미니그래프 = useMemo(() => {
+    if (선택id === null) return null
+    const 노드 = 온톨로지_노드_목록.find((n) => n.노트_id === 선택id)
+    if (!노드) return null
+    const 관계 = 온톨로지_관계_목록.filter((r) => r.출발_노드_id === 노드.id || r.도착_노드_id === 노드.id)
+    if (관계.length === 0) return null
+
+    const 노드맵 = new Map(온톨로지_노드_목록.map((n) => [n.id, n]))
+    const 연결된_id = new Set([노드.id, ...관계.map((r) => r.출발_노드_id), ...관계.map((r) => r.도착_노드_id)])
+
+    const 그래프_노드들: 그래프_노드[] = [...연결된_id].map((id) => {
+      const n = 노드맵.get(id)
+      const 원본이름 = n?.이름 ?? '?'
+      const 표시 = n?.유형 === '사업' && 원본이름.includes(' · ') ? 원본이름.split(' · ').slice(1).join(' · ') : 원본이름
+      return {
+        id,
+        label: 표시.length <= 14 ? 표시 : 표시.slice(0, 14) + '…',
+        title: n ? `${n.유형}: ${n.이름}` : '',
+        color: id === 노드.id ? '#1478d6' : '#8c8c8c',
+        shape: n?.유형 === '사업' ? 'box' : 'dot',
+        size: id === 노드.id ? 28 : 20,
+        borderWidth: id === 노드.id ? 3 : 1,
+      }
+    })
+    const 그래프_엣지들: 그래프_엣지[] = 관계.map((r) => ({
+      id: r.id,
+      from: r.출발_노드_id,
+      to: r.도착_노드_id,
+      label: r.관계유형,
+      title: r.설명 || '',
+      color: '#FC5356',
+    }))
+    return { 노드들: 그래프_노드들, 엣지들: 그래프_엣지들, 노드맵 }
+  }, [선택id, 온톨로지_노드_목록, 온톨로지_관계_목록])
 
   const 태그_목록 = useMemo(() => {
     const 전체 = new Set<string>()
@@ -378,6 +440,24 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {미니그래프 && (
+              <div className="notes-mini-graph-box">
+                <p className="sidebar-caption">
+                  이 노트와 연결된 노드 {미니그래프.엣지들.length}건 — 다른 노트를 클릭하면 바로 이동합니다.
+                </p>
+                <OntologyGraph
+                  nodes={미니그래프.노드들}
+                  edges={미니그래프.엣지들}
+                  height={180}
+                  compact
+                  onNodeClick={(id) => {
+                    const n = 미니그래프.노드맵.get(id)
+                    if (n?.노트_id != null && n.노트_id !== 선택id) set선택id(n.노트_id)
+                  }}
+                />
               </div>
             )}
 
