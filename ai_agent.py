@@ -81,6 +81,11 @@ SYSTEM_PROMPT = (
     "더 오래된 내용이나 다른 대화창에서 나눴던 내용을 참조하면, search_past_conversations로 이 시스템의 "
     "전체 대화 기록(다른 대화창 포함)을 검색해서 실제로 찾아본 뒤 답하세요. 짐작으로 답하지 말고, 못 찾으면 "
     "못 찾았다고 말하세요.\n"
+    "- '위키' 탭에는 사용자가 쓴 개인 노트가 쌓입니다. 노트 관련 질문이나 '이거 노트로 남겨줘' 같은 요청을 "
+    "받으면 query_notes로 먼저 실제로 찾아본 뒤 답하거나, propose_add_note/propose_update_note로 추가·수정을 "
+    "제안하세요(수정은 반드시 먼저 query_notes로 정확한 id를 확인). 노트끼리, 또는 노트와 사업 사이에 관련이 "
+    "있다는 이야기가 나오면 propose_add_relations를 그대로 쓰되 노드 유형을 '노트'로, 이름은 노트 제목으로 "
+    "지정하세요 — 옵시디언의 위키링크처럼 노트는 제목으로 식별되므로 같은 제목이면 같은 노드로 합쳐집니다.\n"
     "- 한 턴에 제안 도구는 한 번만 호출하세요."
 )
 
@@ -293,11 +298,66 @@ TOOLS = [
             "required": ["relation_ids"],
         },
     },
+    {
+        "name": "query_notes",
+        "description": (
+            "'위키' 탭에 사용자가 쓴 노트를 조회한다. 검색어를 지정하면 제목·내용·태그에서 부분일치로 "
+            "찾아준다. 검색어 없이 호출하면 전체 노트 목록(제목/태그만, 내용은 요약 없이 생략)을 반환한다 "
+            "— 특정 노트 내용을 인용하거나 답변 근거로 쓰려면 먼저 이걸로 후보를 찾은 뒤, 필요하면 "
+            "제목으로 다시 좁혀 검색해 내용까지 확인하라. 노트를 수정/정리하자고 제안하기 전에는 반드시 "
+            "이걸로 먼저 조회해 정확한 id를 확인해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "제목/내용/태그에서 찾을 키워드(선택, 없으면 전체 목록)"},
+            },
+        },
+    },
+    {
+        "name": "propose_add_note",
+        "description": (
+            "새 노트를 위키 탭에 추가하자고 제안한다. 실제로 저장하지 않고 화면에 미리보기를 띄워 사용자 "
+            "확인을 받기 위한 제안만 만든다. 사용자가 대화 중 이야기한 내용을 노트로 남겨달라고 하거나, "
+            "정리해서 저장해달라고 할 때 사용하라."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "노트 제목 — 옵시디언처럼 이 제목으로 다른 노트와 연결/식별된다"},
+                "content": {"type": "string", "description": "노트 본문(마크다운)"},
+                "tags": {"type": "string", "description": "콤마로 구분한 태그(선택, 예: '기술,아이디어')"},
+            },
+            "required": ["title", "content"],
+        },
+    },
+    {
+        "name": "propose_update_note",
+        "description": (
+            "기존 노트의 제목/내용/태그를 수정하자고 제안한다. 실제로 저장하지 않고 화면에 미리보기를 "
+            "띄워 사용자 확인을 받기 위한 제안만 만든다. id는 반드시 query_notes로 먼저 조회해 확인한 "
+            "값을 사용해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer", "description": "수정할 노트의 id (query_notes 결과에서 확인)"},
+                "changes": {
+                    "type": "object",
+                    "description": (
+                        "한글 필드명: 새 값 쌍(이 안의 키는 한글 그대로 사용). "
+                        "예: {\"제목\": \"새 제목\", \"내용\": \"새 본문\", \"태그\": \"기술,아이디어\"}"
+                    ),
+                },
+            },
+            "required": ["id", "changes"],
+        },
+    },
 ]
 
 제안_도구명들 = {
     "propose_add_business", "propose_update_business", "propose_delete_business", "propose_add_relations",
-    "import_uploaded_file_as_data", "propose_delete_relations",
+    "import_uploaded_file_as_data", "propose_delete_relations", "propose_add_note", "propose_update_note",
 }
 
 # 스트리밍 중 "지금 뭘 하고 있는지" 화면에 보여주기 위한 도구별 상태 문구.
@@ -311,6 +371,9 @@ _도구_상태_문구 = {
     "propose_add_relations": "추가할 관계를 정리하는 중...",
     "propose_delete_relations": "삭제할 관계를 정리하는 중...",
     "import_uploaded_file_as_data": "업로드한 파일을 반영할 준비를 하는 중...",
+    "query_notes": "노트를 조회하는 중...",
+    "propose_add_note": "노트 내용을 정리하는 중...",
+    "propose_update_note": "수정할 노트 내용을 정리하는 중...",
 }
 
 
@@ -438,6 +501,62 @@ def propose_delete_relations(관계_id_목록: list[int]) -> dict:
     return {"확인": f"{len(관계_id_목록)}개 관계 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
+def query_notes(검색어: str | None = None) -> list[dict]:
+    """repository.py의 노트_검색과 같은 쿼리를 여기서도 직접 짠다 — 이 파일은 다른 조회 도구들과
+    마찬가지로 repository.py를 거치지 않고 자체 커넥션으로 SQLite를 읽는 관례를 따른다."""
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        if 검색어:
+            rows = conn.execute(
+                "SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 "
+                "WHERE 제목 LIKE ? OR 내용 LIKE ? OR 태그 LIKE ? ORDER BY 수정일시 DESC LIMIT 50",
+                (f"%{검색어}%", f"%{검색어}%", f"%{검색어}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 ORDER BY 수정일시 DESC LIMIT 50"
+            ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def propose_add_note(제목: str, 내용: str, 태그: str = "") -> dict:
+    return {"확인": f"'{제목}' 노트 추가를 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def propose_update_note(id: int, 변경필드: dict) -> dict:
+    return {"확인": f"id={id} 노트의 {list(변경필드.keys())} 변경을 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def 노트_위키_정리(내용: str, api_key: str | None = None) -> str:
+    """원본 노트를 구조화된 위키 문서로 정리한다. 원문에 없는 사실을 지어내지 않고, 제목/섹션 구성만 다듬는다."""
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        try:
+            import streamlit as st
+            key = st.secrets.get("ANTHROPIC_API_KEY")
+        except Exception:
+            key = None
+    if not key:
+        return 내용
+
+    client = Anthropic(api_key=key)
+    프롬프트 = f"""다음은 사용자가 쓴 원본 노트입니다. 이 내용을 위키 문서처럼 명확한 구조(제목, 필요하면
+소제목·목록)를 갖춘 마크다운으로 정리해주세요. 원문에 없는 사실을 지어내지 말고, 정리·재구성만 하세요.
+설명 없이 정리된 마크다운 본문만 출력하세요.
+
+원본 노트:
+{내용}"""
+    response = client.messages.create(
+        model=MODEL_NAME, max_tokens=4096, messages=[{"role": "user", "content": 프롬프트}],
+    )
+    return _텍스트_추출(response).strip()
+
+
 _상위_키_매핑 = {
     "query_business_status": {
         "query": "검색어", "category": "사업구분", "type": "구분", "stage": "사업단계",
@@ -449,6 +568,9 @@ _상위_키_매핑 = {
     "propose_add_relations": {"relations": "관계목록"},
     "query_ontology": {"query": "검색어"},
     "propose_delete_relations": {"relation_ids": "관계_id_목록"},
+    "query_notes": {"query": "검색어"},
+    "propose_add_note": {"title": "제목", "content": "내용", "tags": "태그"},
+    "propose_update_note": {"changes": "변경필드"},
 }
 
 _사업항목_키_매핑 = {
@@ -498,6 +620,12 @@ def _도구_실행(name: str, tool_input: dict):
         return query_ontology(**tool_input)
     if name == "propose_delete_relations":
         return propose_delete_relations(**tool_input)
+    if name == "query_notes":
+        return query_notes(**tool_input)
+    if name == "propose_add_note":
+        return propose_add_note(**tool_input)
+    if name == "propose_update_note":
+        return propose_update_note(**tool_input)
     raise ValueError(f"알 수 없는 도구: {name}")
 
 

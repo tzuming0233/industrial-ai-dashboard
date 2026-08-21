@@ -101,6 +101,43 @@ export type 온톨로지_관계 = {
   생성일시: string
 }
 
+export type 노트_요약 = {
+  id: number
+  제목: string
+  태그: string | null
+  생성일시: string
+  수정일시: string
+}
+
+export type 노트 = 노트_요약 & {
+  내용: string | null
+  위키_내용: string | null
+}
+
+export const getNotes = () => api<노트_요약[]>('/api/notes')
+
+export const getNote = (id: number) => api<노트>(`/api/notes/${id}`)
+
+export const createNote = (제목: string, 내용 = '', 태그 = '') =>
+  api<{ id: number }>('/api/notes', {
+    method: 'POST',
+    body: JSON.stringify({ 제목, 내용, 태그 }),
+  })
+
+export const updateNote = (
+  id: number,
+   변경: Partial<{ 제목: string; 내용: string; 위키_내용: string | null; 태그: string }>,
+) =>
+  api<{ ok: boolean }>(`/api/notes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(변경),
+  })
+
+export const deleteNote = (id: number) => api<{ ok: boolean }>(`/api/notes/${id}`, { method: 'DELETE' })
+
+export const organizeNote = (id: number) =>
+  api<{ 위키_내용: string }>(`/api/notes/${id}/organize`, { method: 'POST' })
+
 export const listConversations = () => api<대화[]>('/api/conversations')
 
 export const createConversation = (사업_id: number | null = null) =>

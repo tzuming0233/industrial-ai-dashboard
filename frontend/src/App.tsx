@@ -18,6 +18,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const RevenueTable = lazy(() => import('./pages/RevenueTable'))
 const Milestone = lazy(() => import('./pages/Milestone'))
 const Ontology = lazy(() => import('./pages/Ontology'))
+const Notes = lazy(() => import('./pages/Notes'))
 
 function App() {
   const [인증됨, set인증됨] = useState<boolean | null>(null)
@@ -127,7 +128,7 @@ function App() {
   return (
     <div className="app-shell">
       <TopNav current={탭} onChange={set탭} />
-      <div className={`app-body ${탭 !== 'AI 채팅' ? 'app-body-scroll' : ''}`}>
+      <div className={`app-body ${탭 !== 'AI 채팅' && 탭 !== '위키' ? 'app-body-scroll' : ''}`}>
         {탭 === 'AI 채팅' && (
           <div className="app-layout">
             <Sidebar
@@ -147,6 +148,7 @@ function App() {
           {탭 === '매출현황 표' && <RevenueTable />}
           {탭 === '마일스톤' && <Milestone />}
           {탭 === '사업 온톨로지' && <Ontology />}
+          {탭 === '위키' && <Notes />}
         </Suspense>
       </div>
     </div>

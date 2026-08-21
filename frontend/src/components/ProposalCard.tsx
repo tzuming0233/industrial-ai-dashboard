@@ -60,9 +60,13 @@ export default function ProposalCard({ 요약, 처리중, onApply, onCancel }: P
             </>
           )}
 
-          {유형 === 'propose_update_business' && (
+          {(유형 === 'propose_update_business' ||
+            유형 === 'propose_add_note' ||
+            유형 === 'propose_update_note') && (
             <>
-              <p className="proposal-caption">{요약.제목}</p>
+              <p className="proposal-caption">
+                {유형 === 'propose_add_note' ? `새 노트: ${요약.제목}` : 요약.제목}
+              </p>
               {요약.변경?.map((c, i) => (
                 <p key={i} className="proposal-change-row">
                   <b>{c.필드}</b>: {값표시(c.이전값)} → {값표시(c.새값)}

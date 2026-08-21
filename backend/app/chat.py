@@ -146,6 +146,34 @@ def _제안_요약(제안: dict, 전체_df: pd.DataFrame) -> dict:
                 for _, 행 in 표시용_df.iterrows()
             ],
         }
+    if 유형 in ("propose_add_note", "propose_update_note"):
+        # propose_update_business와 같은 모양({유형, 대상id, 제목, 변경:[...]})으로 요약을 만들면
+        # ProposalCard.tsx가 새 렌더 분기 없이 그대로 그려준다 — "추가"는 이전값=None인 diff로 표현.
+        if 유형 == "propose_update_note":
+            대상id = 인자.get("id")
+            기존 = repo.노트_불러오기(대상id)
+            if not 기존:
+                return {"유형": 유형, "오류": f"id={대상id} 노트를 찾을 수 없습니다."}
+            변경필드 = 인자.get("변경필드", {})
+            return {
+                "유형": 유형,
+                "대상id": 대상id,
+                "제목": f"{기존.get('제목', '')} (id={대상id})",
+                "변경": [
+                    {"필드": 필드, "이전값": 기존.get(필드), "새값": 새값}
+                    for 필드, 새값 in 변경필드.items()
+                ],
+            }
+        return {
+            "유형": 유형,
+            "대상id": None,
+            "제목": 인자.get("제목", ""),
+            "변경": [
+                {"필드": 필드, "이전값": None, "새값": 인자.get(필드)}
+                for 필드 in ("내용", "태그")
+                if 인자.get(필드) is not None
+            ],
+        }
     return {"유형": 유형, "오류": "알 수 없는 제안 유형"}
 
 
@@ -178,6 +206,10 @@ def _제안_반영(제안: dict, 전체_df: pd.DataFrame, 작성자: str = "AI�
     elif 유형 == "propose_delete_relations":
         for 관계_id in 인자.get("관계_id_목록", []):
             repo.온톨로지_관계_삭제(관계_id)
+    elif 유형 == "propose_add_note":
+        repo.노트_생성(인자.get("제목", ""), 인자.get("내용", ""), 인자.get("태그", ""))
+    elif 유형 == "propose_update_note":
+        repo.노트_수정(인자.get("id"), 인자.get("변경필드", {}))
 
 
 # ---------------- 대화 CRUD ----------------

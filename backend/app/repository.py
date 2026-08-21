@@ -635,3 +635,108 @@ def 온톨로지_검색(검색어: str | None = None) -> list[dict]:
         표시용_df = 표시용_df[조건]
 
     return 표시용_df[["id", "출발", "관계유형", "도착", "설명", "작성자", "생성일시"]].to_dict("records")
+
+
+def 노트_DB_준비():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 노트 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                제목 TEXT NOT NULL,
+                내용 TEXT,
+                위키_내용 TEXT,
+                태그 TEXT,
+                생성일시 TEXT,
+                수정일시 TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@_캐시
+def 노트_목록_불러오기() -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 ORDER BY 수정일시 DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 노트_불러오기(노트_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM 노트 WHERE id = ?", (int(노트_id),)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def 노트_생성(제목: str, 내용: str = "", 태그: str = "") -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        cur = conn.execute(
+            "INSERT INTO 노트 (제목, 내용, 위키_내용, 태그, 생성일시, 수정일시) VALUES (?, ?, NULL, ?, ?, ?)",
+            (제목, 내용, 태그, 지금, 지금),
+        )
+        conn.commit()
+        새_id = cur.lastrowid
+    finally:
+        conn.close()
+    노트_목록_불러오기.clear()
+    return 새_id
+
+
+def 노트_수정(노트_id: int, 변경필드: dict) -> None:
+    허용_필드 = {"제목", "내용", "위키_내용", "태그"}
+    반영할_필드 = {k: v for k, v in 변경필드.items() if k in 허용_필드}
+    if not 반영할_필드:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        반영할_필드["수정일시"] = _dt.datetime.now().isoformat(timespec="seconds")
+        set절 = ", ".join(f"{c} = ?" for c in 반영할_필드)
+        conn.execute(f"UPDATE 노트 SET {set절} WHERE id = ?", [*반영할_필드.values(), int(노트_id)])
+        conn.commit()
+    finally:
+        conn.close()
+    노트_목록_불러오기.clear()
+
+
+def 노트_삭제(노트_id: int) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("DELETE FROM 노트 WHERE id = ?", (int(노트_id),))
+        conn.commit()
+    finally:
+        conn.close()
+    노트_목록_불러오기.clear()
+
+
+def 노트_검색(검색어: str | None = None) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        if 검색어:
+            rows = conn.execute(
+                "SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 "
+                "WHERE 제목 LIKE ? OR 내용 LIKE ? OR 태그 LIKE ? ORDER BY 수정일시 DESC",
+                (f"%{검색어}%", f"%{검색어}%", f"%{검색어}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 ORDER BY 수정일시 DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
