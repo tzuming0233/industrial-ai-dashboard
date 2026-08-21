@@ -560,9 +560,70 @@ def propose_delete_relations(관계_id_목록: list[int]) -> dict:
     return {"확인": f"{len(관계_id_목록)}개 관계 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
+def 노트_임베딩_생성(텍스트: str, 용도: str = "document", api_key: str | None = None) -> list[float] | None:
+    """Voyage AI(voyage-4-lite)로 텍스트 임베딩 1건을 만든다. 노트 저장 시 재임베딩과
+    query_notes의 시맨틱 검색에 쓰인다. 용도는 Voyage의 input_type 그대로("document"는
+    저장할 노트, "query"는 검색어) — 같은 모델이라도 이 구분이 검색 품질에 영향을 준다.
+    키가 없거나 호출이 실패하면 None을 돌려주고, 이 실패가 노트 저장 자체를 막지는
+    않는다(다른 보조 AI 호출들과 같은 관례 — 실패해도 앱이 멈추지 않음)."""
+    key = api_key or os.environ.get("VOYAGE_API_KEY")
+    if not key or not (텍스트 or "").strip():
+        return None
+    try:
+        import voyageai
+
+        client = voyageai.Client(api_key=key)
+        결과 = client.embed([텍스트], model="voyage-4-lite", input_type=용도)
+        return 결과.embeddings[0]
+    except Exception:
+        return None
+
+
+def _노트_의미검색(conn: sqlite3.Connection, 검색어: str, 제외_id: set[int], 상위_개수: int = 5) -> list[dict]:
+    """키워드로 못 찾은, 의미상 관련된 노트를 임베딩 유사도로 추가 검색한다."""
+    질의_벡터 = 노트_임베딩_생성(검색어, 용도="query")
+    if 질의_벡터 is None:
+        return []
+    임베딩_행들 = conn.execute("SELECT 노트_id, 벡터 FROM 노트_임베딩").fetchall()
+    if not 임베딩_행들:
+        return []
+
+    import numpy as np
+
+    질의 = np.array(질의_벡터, dtype=np.float32)
+    질의_크기 = np.linalg.norm(질의) or 1.0
+    후보들 = []
+    for 노트_id, 벡터_바이트 in 임베딩_행들:
+        if 노트_id in 제외_id:
+            continue
+        벡터 = np.frombuffer(벡터_바이트, dtype=np.float32)
+        유사도 = float(np.dot(질의, 벡터) / (질의_크기 * (np.linalg.norm(벡터) or 1.0)))
+        if 유사도 >= 0.3:
+            후보들.append((유사도, 노트_id))
+    if not 후보들:
+        return []
+    후보들.sort(key=lambda x: x[0], reverse=True)
+    상위_id들 = [노트_id for _, 노트_id in 후보들[:상위_개수]]
+
+    conn.row_factory = sqlite3.Row
+    자리표시자 = ",".join("?" * len(상위_id들))
+    rows = conn.execute(
+        f"SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 WHERE id IN ({자리표시자})",
+        상위_id들,
+    ).fetchall()
+    순서 = {노트_id: i for i, 노트_id in enumerate(상위_id들)}
+    결과 = [dict(row) for row in rows]
+    결과.sort(key=lambda r: 순서.get(r["id"], len(상위_id들)))
+    return 결과
+
+
 def query_notes(검색어: str | None = None) -> list[dict]:
     """repository.py의 노트_검색과 같은 쿼리를 여기서도 직접 짠다 — 이 파일은 다른 조회 도구들과
-    마찬가지로 repository.py를 거치지 않고 자체 커넥션으로 SQLite를 읽는 관례를 따른다."""
+    마찬가지로 repository.py를 거치지 않고 자체 커넥션으로 SQLite를 읽는 관례를 따른다.
+
+    검색어가 있으면 기존 키워드(LIKE) 검색 결과에 더해, 임베딩 기반 시맨틱 검색으로
+    찾은 의미상 관련된 노트도 뒤에 이어붙인다(Voyage 키가 없으면 조용히 건너뜀 —
+    키워드 검색만으로도 그대로 동작)."""
     if not DB_PATH.exists():
         return []
     conn = sqlite3.connect(DB_PATH)
@@ -574,10 +635,13 @@ def query_notes(검색어: str | None = None) -> list[dict]:
                 "WHERE 제목 LIKE ? OR 내용 LIKE ? OR 태그 LIKE ? ORDER BY 수정일시 DESC LIMIT 50",
                 (f"%{검색어}%", f"%{검색어}%", f"%{검색어}%"),
             ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 ORDER BY 수정일시 DESC LIMIT 50"
-            ).fetchall()
+            결과 = [dict(row) for row in rows]
+            기존_id_집합 = {행["id"] for 행 in 결과}
+            결과 += _노트_의미검색(conn, 검색어, 기존_id_집합)
+            return 결과
+        rows = conn.execute(
+            "SELECT id, 제목, 태그, 생성일시, 수정일시 FROM 노트 ORDER BY 수정일시 DESC LIMIT 50"
+        ).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
@@ -833,6 +897,30 @@ def 대화_제목_생성(첫_메시지: str, api_key: str | None = None) -> str:
         return 기본_제목
 
 
+_고정_컨텍스트_최대_글자수 = 6000
+
+
+def _시스템_프롬프트_구성() -> str:
+    """사용자가 위키에서 '고정컨텍스트'로 표시한 노트를, Claude Code의 CLAUDE.md처럼
+    모든 AI 채팅 요청에 항상 참고하도록 시스템 프롬프트 뒤에 덧붙인다."""
+    if not DB_PATH.exists():
+        return SYSTEM_PROMPT
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        고정_노트들 = conn.execute(
+            "SELECT 제목, 내용 FROM 노트 WHERE 고정컨텍스트 = 1 ORDER BY 수정일시 DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    if not 고정_노트들:
+        return SYSTEM_PROMPT
+    묶음 = "\n\n".join(f"## {행['제목']}\n{행['내용'] or ''}" for 행 in 고정_노트들)
+    if len(묶음) > _고정_컨텍스트_최대_글자수:
+        묶음 = 묶음[:_고정_컨텍스트_최대_글자수] + "\n...(이하 생략)"
+    return SYSTEM_PROMPT + "\n\n[사용자가 위키에서 '고정컨텍스트'로 표시해 항상 참고하라고 지정한 노트]\n" + 묶음
+
+
 def 질의하기(question: str, history: list[dict] | None = None, api_key: str | None = None) -> dict:
     """자연어 질문 -> Claude가 SQLite를 조회하거나 변경을 제안하며 답변 생성
 
@@ -857,13 +945,14 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
 
     client = Anthropic(api_key=key)
     messages = list(history or []) + [{"role": "user", "content": question}]
+    system_prompt = _시스템_프롬프트_구성()
 
     대기중_제안 = None
     for _ in range(5):  # 도구 호출 반복 상한
         response = client.messages.create(
             model=MODEL_NAME,
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=messages,
             tools=TOOLS,
         )
@@ -912,6 +1001,7 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
 
     client = Anthropic(api_key=key)
     messages = list(history or []) + [{"role": "user", "content": question}]
+    system_prompt = _시스템_프롬프트_구성()
 
     대기중_제안 = None
     생성된_파일 = None
@@ -921,7 +1011,7 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
             "text": "요청을 확인하는 중..." if 회차 == 0 else "조회 결과를 반영해서 답변을 정리하는 중...",
         }
         with client.messages.stream(
-            model=MODEL_NAME, max_tokens=8192, system=SYSTEM_PROMPT, messages=messages, tools=TOOLS,
+            model=MODEL_NAME, max_tokens=8192, system=system_prompt, messages=messages, tools=TOOLS,
         ) as stream:
             # text_stream만 쓰면 web_search 같은 서버 도구가 실행되는 동안(같은 응답 안에서
             # 클라이언트 왕복 없이 일어남) 화면에 아무 신호도 안 뜬다. 원시 이벤트를 직접 봐서

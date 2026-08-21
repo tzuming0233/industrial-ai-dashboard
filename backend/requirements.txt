@@ -11,3 +11,4 @@ pyhwp>=0.1b15
 olefile>=0.47
 python-docx>=1.1
 python-pptx>=1.0
+voyageai>=0.3

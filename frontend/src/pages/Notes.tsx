@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -6,9 +6,12 @@ import {
   deleteNote,
   getNote,
   getNotes,
+  getNoteVersions,
   organizeNote,
+  restoreNoteVersion,
   updateNote,
   type 노트,
+  type 노트_버전행,
   type 노트_요약,
 } from '../api'
 import Icon from '../components/Icon'
@@ -17,6 +20,22 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 type Props = {
   데이터_갱신_신호?: number
+}
+
+// `[[제목]]`은 그래프로 자동 연결되는 위키링크로, 본문에 쓴 `#태그`는 자동 인식되는
+// 태그로 각각 클릭 가능한 링크로 바꿔서 보여준다 — 대괄호 안쪽은 통째로 먼저 매치되므로
+// `[[제목#섹션]]`처럼 안에 #이 있어도 태그 규칙과 섞이지 않는다.
+const 위키_렌더_패턴 = /\[\[([^\]]+)\]\]|#(?!\s)([\w가-힣]+)/g
+
+function 위키텍스트_전처리(md: string): string {
+  return md.replace(위키_렌더_패턴, (_match, 위키링크?: string, 태그?: string) => {
+    if (위키링크 !== undefined) {
+      const 표시 = 위키링크.split('|')[0].trim()
+      const 링크제목 = 표시.split('#')[0].trim()
+      return `[${표시}](#wikilink/${encodeURIComponent(링크제목)})`
+    }
+    return `[#${태그}](#tagchip/${encodeURIComponent(태그 ?? '')})`
+  })
 }
 
 export default function Notes({ 데이터_갱신_신호 }: Props) {
@@ -39,6 +58,11 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
 
   const [삭제확인, set삭제확인] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [고정컨텍스트, set고정컨텍스트] = useState(false)
+  const [버전목록, set버전목록] = useState<노트_버전행[]>([])
+  const [이력_열림, set이력_열림] = useState(false)
+  const [복원중, set복원중] = useState<number | null>(null)
 
   const { 지원됨: 음성지원, 듣는중, 토글: 음성_토글 } = useSpeechRecognition((text) => {
     set내용_입력((prev) => (prev ? `${prev} ${text}` : text))
@@ -63,15 +87,29 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
     set정리_미리보기(null)
     set삭제확인(false)
     set뷰_모드('원본')
+    set이력_열림(false)
     getNote(선택id)
       .then((n) => {
         set선택된_노트(n)
         set제목_입력(n.제목)
         set내용_입력(n.내용 ?? '')
         set태그_입력(n.태그 ?? '')
+        set고정컨텍스트(Boolean(n.고정컨텍스트))
       })
       .finally(() => set상세_로딩(false))
+    getNoteVersions(선택id).then(set버전목록)
   }, [선택id])
+
+  const 태그_목록 = useMemo(() => {
+    const 전체 = new Set<string>()
+    for (const n of 목록) {
+      for (const t of (n.태그 ?? '').split(',')) {
+        const trimmed = t.trim()
+        if (trimmed) 전체.add(trimmed)
+      }
+    }
+    return [...전체].sort()
+  }, [목록])
 
   const 필터된_목록 = useMemo(() => {
     const q = 검색어.trim().toLowerCase()
@@ -80,6 +118,51 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
       (n) => n.제목.toLowerCase().includes(q) || (n.태그 ?? '').toLowerCase().includes(q),
     )
   }, [목록, 검색어])
+
+  function 위키링크_클릭(제목: string) {
+    const 대상 = 목록.find((n) => n.제목 === 제목)
+    if (대상) set선택id(대상.id)
+  }
+
+  const 마크다운_링크_컴포넌트 = {
+    a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+      if (href?.startsWith('#wikilink/')) {
+        const 제목 = decodeURIComponent(href.slice('#wikilink/'.length))
+        return (
+          <a
+            href="#"
+            className="wikilink"
+            onClick={(e) => {
+              e.preventDefault()
+              위키링크_클릭(제목)
+            }}
+          >
+            {children}
+          </a>
+        )
+      }
+      if (href?.startsWith('#tagchip/')) {
+        const 태그 = decodeURIComponent(href.slice('#tagchip/'.length))
+        return (
+          <a
+            href="#"
+            className="tag-chip-inline"
+            onClick={(e) => {
+              e.preventDefault()
+              set검색어(태그)
+            }}
+          >
+            {children}
+          </a>
+        )
+      }
+      return (
+        <a href={href} target="_blank" rel="noreferrer">
+          {children}
+        </a>
+      )
+    },
+  }
 
   async function 새_노트() {
     const { id } = await createNote('새 노트', '', '')
@@ -92,14 +175,34 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
     setError(null)
     set저장중(true)
     try {
-      await updateNote(선택id, { 제목: 제목_입력, 내용: 내용_입력, 태그: 태그_입력 })
+      await updateNote(선택id, { 제목: 제목_입력, 내용: 내용_입력, 태그: 태그_입력, 고정컨텍스트 })
       await 목록_새로고침()
       const 최신 = await getNote(선택id)
       set선택된_노트(최신)
+      set버전목록(await getNoteVersions(선택id))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       set저장중(false)
+    }
+  }
+
+  async function 버전_복원_실행(버전_id: number) {
+    if (선택id === null) return
+    set복원중(버전_id)
+    try {
+      await restoreNoteVersion(선택id, 버전_id)
+      const 최신 = await getNote(선택id)
+      set선택된_노트(최신)
+      set제목_입력(최신.제목)
+      set내용_입력(최신.내용 ?? '')
+      set태그_입력(최신.태그 ?? '')
+      set버전목록(await getNoteVersions(선택id))
+      await 목록_새로고침()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      set복원중(null)
     }
   }
 
@@ -191,6 +294,19 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
             onChange={(e) => set검색어(e.target.value)}
           />
         </div>
+        {태그_목록.length > 0 && (
+          <div className="tag-chip-row">
+            {태그_목록.map((t) => (
+              <button
+                key={t}
+                className={`tag-chip ${검색어 === t ? 'tag-chip-active' : ''}`}
+                onClick={() => set검색어((prev) => (prev === t ? '' : t))}
+              >
+                #{t}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="conv-list">
           {필터된_목록.length === 0 && <p className="sidebar-caption">노트가 없습니다.</p>}
           {필터된_목록.map((n) => (
@@ -225,6 +341,45 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
                 <Icon name="trash" size={15} />
               </button>
             </div>
+
+            <div className="notes-meta-row">
+              {선택된_노트.최근수정자 && (
+                <span className="sidebar-caption">최근 수정: {선택된_노트.최근수정자}</span>
+              )}
+              <label className="radio-label notes-pin-toggle">
+                <input
+                  type="checkbox"
+                  checked={고정컨텍스트}
+                  onChange={(e) => set고정컨텍스트(e.target.checked)}
+                />
+                이 노트를 AI에게 항상 알려주기(규칙·용어집 등)
+              </label>
+              {버전목록.length > 0 && (
+                <button className="btn btn-secondary notes-history-toggle" onClick={() => set이력_열림((v) => !v)}>
+                  <Icon name="clock" size={13} />
+                  이력 {버전목록.length}건
+                </button>
+              )}
+            </div>
+
+            {이력_열림 && (
+              <div className="notes-history-box">
+                {버전목록.map((v) => (
+                  <div key={v.id} className="notes-history-row">
+                    <span className="sidebar-caption">
+                      {v.저장일시} · {v.작성자}
+                    </span>
+                    <button
+                      className="btn btn-secondary"
+                      disabled={복원중 === v.id}
+                      onClick={() => 버전_복원_실행(v.id)}
+                    >
+                      이 버전으로 복원
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {삭제확인 && (
               <div className="delete-confirm">
@@ -273,7 +428,9 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
               />
             ) : (
               <div className="notes-wiki-view assistant-text">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{선택된_노트.위키_내용}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_링크_컴포넌트}>
+                  {위키텍스트_전처리(선택된_노트.위키_내용)}
+                </ReactMarkdown>
               </div>
             )}
 
@@ -303,7 +460,9 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
               <div className="proposal-card notes-organize-preview">
                 <p className="proposal-caption">AI가 정리한 위키 버전 (원본은 그대로 유지됩니다)</p>
                 <div className="notes-wiki-view assistant-text">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{정리_미리보기}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_링크_컴포넌트}>
+                    {위키텍스트_전처리(정리_미리보기)}
+                  </ReactMarkdown>
                 </div>
                 <div className="proposal-actions">
                   <button className="btn btn-primary" disabled={저장중} onClick={정리본_적용}>

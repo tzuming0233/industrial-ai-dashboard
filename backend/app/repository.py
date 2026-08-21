@@ -786,9 +786,54 @@ def 노트_DB_준비():
             )
             """
         )
+        기존_노트_컬럼 = {row[1] for row in conn.execute("PRAGMA table_info(노트)")}
+        # 고정컨텍스트: 이 노트를 AI 채팅의 모든 요청에 항상 참고시킬지 여부(CLAUDE.md 스타일).
+        if "고정컨텍스트" not in 기존_노트_컬럼:
+            conn.execute("ALTER TABLE 노트 ADD COLUMN 고정컨텍스트 INTEGER DEFAULT 0")
+        # 최근수정자: 사람이 직접 편집("직접 편집")했는지 AI 채팅("AI채팅")이 만들었는지 구분 표시용.
+        if "최근수정자" not in 기존_노트_컬럼:
+            conn.execute("ALTER TABLE 노트 ADD COLUMN 최근수정자 TEXT")
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 노트_버전 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                노트_id INTEGER NOT NULL,
+                제목 TEXT,
+                내용 TEXT,
+                태그 TEXT,
+                저장일시 TEXT,
+                작성자 TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 노트_임베딩 (
+                노트_id INTEGER PRIMARY KEY,
+                벡터 BLOB NOT NULL,
+                갱신일시 TEXT
+            )
+            """
+        )
         conn.commit()
     finally:
         conn.close()
+
+
+_본문_태그_패턴 = re.compile(r"#(?!\s)(\w+)")
+
+
+def _본문_태그_추출(내용: str) -> set[str]:
+    """본문의 '#태그' 표기를 태그로 인식한다(마크다운 제목 '# 제목'은 '#' 뒤에 공백이
+    있어 매칭되지 않음 — 옵시디언과 같은 인라인 태그 방식)."""
+    return set(_본문_태그_패턴.findall(내용 or ""))
+
+
+def _태그_병합(기존_태그: str, 내용: str) -> str:
+    기존_집합 = {t.strip() for t in (기존_태그 or "").split(",") if t.strip()}
+    병합_집합 = 기존_집합 | _본문_태그_추출(내용)
+    return ",".join(sorted(병합_집합))
 
 
 @_캐시
@@ -814,13 +859,15 @@ def 노트_불러오기(노트_id: int) -> dict | None:
         conn.close()
 
 
-def 노트_생성(제목: str, 내용: str = "", 태그: str = "") -> int:
+def 노트_생성(제목: str, 내용: str = "", 태그: str = "", 작성자: str = "직접 편집") -> int:
+    태그 = _태그_병합(태그, 내용)
     conn = sqlite3.connect(DB_PATH)
     try:
         지금 = _dt.datetime.now().isoformat(timespec="seconds")
         cur = conn.execute(
-            "INSERT INTO 노트 (제목, 내용, 위키_내용, 태그, 생성일시, 수정일시) VALUES (?, ?, NULL, ?, ?, ?)",
-            (제목, 내용, 태그, 지금, 지금),
+            "INSERT INTO 노트 (제목, 내용, 위키_내용, 태그, 생성일시, 수정일시, 최근수정자) "
+            "VALUES (?, ?, NULL, ?, ?, ?, ?)",
+            (제목, 내용, 태그, 지금, 지금, 작성자),
         )
         conn.commit()
         새_id = cur.lastrowid
@@ -831,14 +878,37 @@ def 노트_생성(제목: str, 내용: str = "", 태그: str = "") -> int:
     return 새_id
 
 
-def 노트_수정(노트_id: int, 변경필드: dict) -> None:
-    허용_필드 = {"제목", "내용", "위키_내용", "태그"}
+def 노트_수정(노트_id: int, 변경필드: dict, 작성자: str = "직접 편집") -> None:
+    허용_필드 = {"제목", "내용", "위키_내용", "태그", "고정컨텍스트"}
     반영할_필드 = {k: v for k, v in 변경필드.items() if k in 허용_필드}
     if not 반영할_필드:
         return
     conn = sqlite3.connect(DB_PATH)
     try:
+        conn.row_factory = sqlite3.Row
+        현재행 = conn.execute(
+            "SELECT 제목, 내용, 태그, 최근수정자 FROM 노트 WHERE id = ?", (int(노트_id),)
+        ).fetchone()
+        if not 현재행:
+            return
+
+        # 이번 수정으로 사라질 이전 상태를, 실제로 그걸 썼던 사람(또는 AI) 이름으로
+        # 스냅샷해둔다 — 나중에 이 시점으로 되돌릴 수 있는 지점이 된다.
+        conn.execute(
+            "INSERT INTO 노트_버전 (노트_id, 제목, 내용, 태그, 저장일시, 작성자) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                int(노트_id), 현재행["제목"], 현재행["내용"], 현재행["태그"],
+                _dt.datetime.now().isoformat(timespec="seconds"),
+                현재행["최근수정자"] or "직접 편집",
+            ),
+        )
+
+        효과적_내용 = 반영할_필드.get("내용", 현재행["내용"] or "")
+        효과적_태그 = 반영할_필드.get("태그", 현재행["태그"] or "")
+        반영할_필드["태그"] = _태그_병합(효과적_태그, 효과적_내용)
         반영할_필드["수정일시"] = _dt.datetime.now().isoformat(timespec="seconds")
+        반영할_필드["최근수정자"] = 작성자
+
         set절 = ", ".join(f"{c} = ?" for c in 반영할_필드)
         conn.execute(f"UPDATE 노트 SET {set절} WHERE id = ?", [*반영할_필드.values(), int(노트_id)])
         conn.commit()
@@ -849,7 +919,64 @@ def 노트_수정(노트_id: int, 변경필드: dict) -> None:
         conn.close()
     노트_목록_불러오기.clear()
     if 최신행:
-        노트_위키링크_동기화(노트_id, 최신행[0], 최신행[1] or "")
+        노트_위키링크_동기화(노트_id, 최신행["제목"], 최신행["내용"] or "")
+
+
+def 노트_버전_목록(노트_id: int) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 제목, 저장일시, 작성자 FROM 노트_버전 WHERE 노트_id = ? ORDER BY id DESC",
+            (int(노트_id),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 노트_버전_불러오기(버전_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM 노트_버전 WHERE id = ?", (int(버전_id),)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def 고정컨텍스트_노트_목록() -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT 제목, 내용 FROM 노트 WHERE 고정컨텍스트 = 1 ORDER BY 수정일시 DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 노트_임베딩_저장(노트_id: int, 벡터: bytes) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO 노트_임베딩 (노트_id, 벡터, 갱신일시) VALUES (?, ?, ?) "
+            "ON CONFLICT(노트_id) DO UPDATE SET 벡터 = excluded.벡터, 갱신일시 = excluded.갱신일시",
+            (int(노트_id), 벡터, _dt.datetime.now().isoformat(timespec="seconds")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def 전체_노트_임베딩_불러오기() -> list[tuple[int, bytes]]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute("SELECT 노트_id, 벡터 FROM 노트_임베딩").fetchall()
+        return [(row[0], row[1]) for row in rows]
+    finally:
+        conn.close()
 
 
 def 노트_삭제(노트_id: int) -> None:

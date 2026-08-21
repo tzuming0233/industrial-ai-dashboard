@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addOntologyRelationDirect,
+  createNote,
   deleteOntologyRelation,
   getBusiness,
   getOntologyNodes,
@@ -45,6 +46,7 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
   const [busy, setBusy] = useState(false)
 
   const [초기화_확인, set초기화_확인] = useState(false)
+  const [노트_생성중, set노트_생성중] = useState(false)
 
   async function 새로고침() {
     const [biz, n, r] = await Promise.all([getBusiness(), getOntologyNodes(), getOntologyRelations()])
@@ -127,6 +129,13 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
     [표시할_관계],
   )
 
+  const 백링크 = useMemo(() => {
+    if (클릭된_노드id === null) return []
+    return relations
+      .filter((r) => r.도착_노드_id === 클릭된_노드id)
+      .map((r) => ({ 관계: r, 출발_노드: 노드_이름맵.get(r.출발_노드_id) }))
+  }, [relations, 클릭된_노드id, 노드_이름맵])
+
   function 사업_토글(id: number) {
     set선택된_사업id((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
@@ -154,6 +163,21 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
       await 새로고침()
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function 팬텀_노트_생성_실행() {
+    if (!클릭된_노드 || 클릭된_노드.노트_id != null || !onOpenNote) return
+    set노트_생성중(true)
+    try {
+      const { id } = await createNote(클릭된_노드.이름)
+      // 새로 만든 노트가 이 팬텀 노드의 노트_id로 자동 백필되도록(제목이 같으면
+      // repository.py의 _노트_노드_획득이 이름으로 매칭해 붙여준다), 그래프를 새로고침한 뒤 연다.
+      await 새로고침()
+      set클릭된_노드id(null)
+      onOpenNote(id)
+    } finally {
+      set노트_생성중(false)
     }
   }
 
@@ -268,6 +292,24 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
                   <Icon name="book" size={14} />
                   노트 열기
                 </button>
+              )}
+              {클릭된_노드.노트_id == null && 클릭된_노드.유형 === '노트' && onOpenNote && (
+                <button className="btn btn-secondary" disabled={노트_생성중} onClick={팬텀_노트_생성_실행}>
+                  <Icon name="plus" size={14} />
+                  이 노트 만들기
+                </button>
+              )}
+              {백링크.length > 0 && (
+                <div className="ontology-backlinks">
+                  <p className="sidebar-caption">이 노드를 링크한 노드들</p>
+                  <ul className="ontology-backlink-list">
+                    {백링크.map(({ 관계, 출발_노드 }) => (
+                      <li key={관계.id}>
+                        <b>{출발_노드?.이름 ?? '?'}</b> —[{관계.관계유형}]→
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
               <select
                 className="text-input"

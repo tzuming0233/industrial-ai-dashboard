@@ -1273,6 +1273,93 @@
   width: auto;
 }
 
+.tag-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.tag-chip {
+  border: 1px solid var(--테두리색);
+  background: none;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--보조텍스트색);
+  cursor: pointer;
+}
+
+.tag-chip-active {
+  background: var(--남색-연하게);
+  border-color: var(--남색);
+  color: var(--남색-진하게);
+}
+
+.tag-chip-inline,
+.wikilink {
+  color: var(--남색-진하게);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--남색);
+  cursor: pointer;
+}
+
+.tag-chip-inline {
+  background: var(--남색-연하게);
+  border-bottom: none;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.9em;
+}
+
+.notes-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.notes-pin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.notes-history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.notes-history-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--테두리색);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.notes-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ontology-backlinks {
+  border-top: 1px solid var(--테두리색);
+  padding-top: 8px;
+}
+
+.ontology-backlink-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
 @media (max-width: 720px) {
   .notes-sidebar {
     position: absolute;

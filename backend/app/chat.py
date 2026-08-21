@@ -16,6 +16,7 @@ import json
 import shutil
 import uuid
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
@@ -205,6 +206,17 @@ def _제안_요약(제안: dict, 전체_df: pd.DataFrame) -> dict:
     return {"유형": 유형, "오류": "알 수 없는 제안 유형"}
 
 
+def _노트_재임베딩(note_id: int, 제목: str, 내용: str) -> None:
+    """의미검색용 벡터를 갱신한다. Voyage 키가 없거나 호출이 실패해도 노트 저장
+    자체는 이미 끝난 뒤이므로 여기서는 그냥 조용히 넘어간다."""
+    try:
+        벡터 = ai_agent.노트_임베딩_생성(f"{제목}\n{내용}".strip())
+        if 벡터:
+            repo.노트_임베딩_저장(note_id, np.asarray(벡터, dtype="float32").tobytes())
+    except Exception:
+        pass
+
+
 def _제안_반영(제안: dict, 전체_df: pd.DataFrame, 작성자: str = "AI채팅") -> None:
     유형 = 제안.get("유형")
     인자 = 제안.get("인자", {})
@@ -235,9 +247,15 @@ def _제안_반영(제안: dict, 전체_df: pd.DataFrame, 작성자: str = "AI�
         for 관계_id in 인자.get("관계_id_목록", []):
             repo.온톨로지_관계_삭제(관계_id)
     elif 유형 == "propose_add_note":
-        repo.노트_생성(인자.get("제목", ""), 인자.get("내용", ""), 인자.get("태그", ""))
+        제목, 내용 = 인자.get("제목", ""), 인자.get("내용", "")
+        새_id = repo.노트_생성(제목, 내용, 인자.get("태그", ""), 작성자=작성자)
+        _노트_재임베딩(새_id, 제목, 내용)
     elif 유형 == "propose_update_note":
-        repo.노트_수정(인자.get("id"), 인자.get("변경필드", {}))
+        대상id = 인자.get("id")
+        repo.노트_수정(대상id, 인자.get("변경필드", {}), 작성자=작성자)
+        최신 = repo.노트_불러오기(대상id)
+        if 최신:
+            _노트_재임베딩(대상id, 최신.get("제목", ""), 최신.get("내용", "") or "")
 
 
 # ---------------- 대화 CRUD ----------------

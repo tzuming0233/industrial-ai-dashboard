@@ -120,6 +120,15 @@ export type 노트_요약 = {
 export type 노트 = 노트_요약 & {
   내용: string | null
   위키_내용: string | null
+  고정컨텍스트?: number | boolean
+  최근수정자?: string | null
+}
+
+export type 노트_버전행 = {
+  id: number
+  제목: string
+  저장일시: string
+  작성자: string
 }
 
 export const getNotes = () => api<노트_요약[]>('/api/notes')
@@ -134,7 +143,13 @@ export const createNote = (제목: string, 내용 = '', 태그 = '') =>
 
 export const updateNote = (
   id: number,
-   변경: Partial<{ 제목: string; 내용: string; 위키_내용: string | null; 태그: string }>,
+   변경: Partial<{
+    제목: string
+    내용: string
+    위키_내용: string | null
+    태그: string
+    고정컨텍스트: boolean
+  }>,
 ) =>
   api<{ ok: boolean }>(`/api/notes/${id}`, {
     method: 'PUT',
@@ -145,6 +160,11 @@ export const deleteNote = (id: number) => api<{ ok: boolean }>(`/api/notes/${id}
 
 export const organizeNote = (id: number) =>
   api<{ 위키_내용: string }>(`/api/notes/${id}/organize`, { method: 'POST' })
+
+export const getNoteVersions = (id: number) => api<노트_버전행[]>(`/api/notes/${id}/versions`)
+
+export const restoreNoteVersion = (noteId: number, versionId: number) =>
+  api<{ ok: boolean }>(`/api/notes/${noteId}/versions/${versionId}/restore`, { method: 'POST' })
 
 export const listConversations = () => api<대화[]>('/api/conversations')
 
