@@ -43,7 +43,9 @@ class _파일버퍼(io.BytesIO):
 
 
 def _df_레코드(df: pd.DataFrame) -> list[dict]:
-    return df.where(pd.notna(df), None).to_dict("records")
+    # astype(object) 없이 .where(notna, None)만 쓰면 NULL 섞인 정수 컬럼(float64로 읽힘)에서
+    # 대입한 None이 다시 NaN으로 되돌아가 json.dumps가 500을 낸다.
+    return df.astype(object).where(df.notna(), None).to_dict("records")
 
 
 def _사업_라벨_맵(전체_df: pd.DataFrame) -> dict[int, str]:

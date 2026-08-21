@@ -8,6 +8,7 @@ Streamlit import가 전혀 없다 — app.py(Streamlit)와 backend(FastAPI)가 �
 
 import datetime as _dt
 import importlib.util
+import re
 import sqlite3
 from pathlib import Path
 
@@ -284,6 +285,11 @@ def 온톨로지_DB_준비():
             )
             """
         )
+        # 노트 위키링크([[제목]])로 자동 생성되는 노드를 실제 노트와 안정적으로 연결하기 위한
+        # 컬럼 — 이름(제목)만으로 매칭하면 노트 제목을 바꿀 때 그래프 연결이 끊긴다.
+        기존_노드_컬럼 = {row[1] for row in conn.execute("PRAGMA table_info(온톨로지_노드)")}
+        if "노트_id" not in 기존_노드_컬럼:
+            conn.execute("ALTER TABLE 온톨로지_노드 ADD COLUMN 노트_id INTEGER")
         conn.commit()
     finally:
         conn.close()
@@ -556,6 +562,104 @@ def _온톨로지_노드_획득(conn: sqlite3.Connection, 노드: dict, 전체_d
     return cur.lastrowid
 
 
+_위키링크_패턴 = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def _노트_노드_획득(conn: sqlite3.Connection, 노트_id: int, 제목: str) -> int:
+    """노트_id로 연결된 온톨로지 노드를 찾고, 없으면 만든다.
+
+    AI 채팅의 propose_add_relations가 예전부터 노트를 유형='노트'+이름 매칭만으로
+    다뤄왔으므로, 노트_id로 못 찾으면 이름으로 한 번 더 찾아 그 노드에 노트_id를
+    백필한다(중복 노드 생성 방지). 제목이 바뀌었으면(=노트_id는 같은데 저장된
+    이름이 다름) 노드 이름도 같이 갱신한다.
+    """
+    row = conn.execute("SELECT id, 이름 FROM 온톨로지_노드 WHERE 노트_id = ?", (int(노트_id),)).fetchone()
+    if row:
+        if row[1] != 제목:
+            conn.execute("UPDATE 온톨로지_노드 SET 이름 = ? WHERE id = ?", (제목, row[0]))
+        return row[0]
+
+    row = conn.execute(
+        "SELECT id FROM 온톨로지_노드 WHERE 유형 = '노트' AND 이름 = ? AND 노트_id IS NULL", (제목,)
+    ).fetchone()
+    if row:
+        conn.execute("UPDATE 온톨로지_노드 SET 노트_id = ? WHERE id = ?", (int(노트_id), row[0]))
+        return row[0]
+
+    cur = conn.execute(
+        "INSERT INTO 온톨로지_노드 (유형, 이름, 사업_id, 노트_id, 생성일시) VALUES ('노트', ?, NULL, ?, ?)",
+        (제목, int(노트_id), _dt.datetime.now().isoformat(timespec="seconds")),
+    )
+    return cur.lastrowid
+
+
+def _위키링크_대상_노드_획득(conn: sqlite3.Connection, 링크제목: str) -> int:
+    """위키링크가 가리키는 제목에 실제 노트가 있으면 그 노드로, 없으면(옵시디언의
+    "아직 안 쓴 노트" 링크처럼) 노트_id 없는 팬텀 개념 노드로 연결한다."""
+    노트행 = conn.execute("SELECT id FROM 노트 WHERE 제목 = ?", (링크제목,)).fetchone()
+    if 노트행:
+        return _노트_노드_획득(conn, 노트행[0], 링크제목)
+
+    row = conn.execute(
+        "SELECT id FROM 온톨로지_노드 WHERE 유형 = '노트' AND 이름 = ? AND 노트_id IS NULL", (링크제목,)
+    ).fetchone()
+    if row:
+        return row[0]
+    cur = conn.execute(
+        "INSERT INTO 온톨로지_노드 (유형, 이름, 사업_id, 노트_id, 생성일시) VALUES ('노트', ?, NULL, NULL, ?)",
+        (링크제목, _dt.datetime.now().isoformat(timespec="seconds")),
+    )
+    return cur.lastrowid
+
+
+def 노트_위키링크_동기화(노트_id: int, 제목: str, 내용: str) -> None:
+    """노트 본문의 [[다른 노트]] 표기를 그래프 엣지와 동기화한다(옵시디언 위키링크).
+
+    매번 이 노트에서 나간 '위키링크' 작성자 엣지 전체를 최신 본문 기준으로 다시
+    계산해 diff한다 — AI 채팅이 propose_add_relations로 만든 엣지(작성자='AI채팅')나
+    그래프에서 직접 이은 엣지(작성자='그래프클릭')는 작성자가 달라 절대 건드리지
+    않는다.
+    """
+    링크제목들 = {
+        조각.split("|", 1)[0].split("#", 1)[0].strip()
+        for 조각 in _위키링크_패턴.findall(내용 or "")
+    }
+    링크제목들 = {t for t in 링크제목들 if t and t != 제목}
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        출발_노드_id = _노트_노드_획득(conn, 노트_id, 제목)
+        목표_노드id_집합 = {_위키링크_대상_노드_획득(conn, t) for t in 링크제목들}
+
+        기존_엣지들 = conn.execute(
+            "SELECT id, 도착_노드_id FROM 온톨로지_관계 "
+            "WHERE 출발_노드_id = ? AND 관계유형 = '위키링크' AND 작성자 = '위키링크'",
+            (출발_노드_id,),
+        ).fetchall()
+        기존_도착id_맵 = {도착: id_ for id_, 도착 in 기존_엣지들}
+
+        지울_엣지id들 = [id_ for 도착, id_ in 기존_도착id_맵.items() if 도착 not in 목표_노드id_집합]
+        for 엣지id in 지울_엣지id들:
+            conn.execute("DELETE FROM 온톨로지_관계 WHERE id = ?", (엣지id,))
+
+        추가할_도착id들 = 목표_노드id_집합 - set(기존_도착id_맵.keys())
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        for 도착_노드id in 추가할_도착id들:
+            conn.execute(
+                "INSERT INTO 온톨로지_관계 (출발_노드_id, 도착_노드_id, 관계유형, 설명, 작성자, 생성일시) "
+                "VALUES (?, ?, '위키링크', '', '위키링크', ?)",
+                (출발_노드_id, 도착_노드id, 지금),
+            )
+
+        if 지울_엣지id들:
+            _온톨로지_고아노드_정리(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    온톨로지_노드_불러오기.clear()
+    온톨로지_관계_불러오기.clear()
+
+
 def 온톨로지_관계_추가(관계목록: list[dict], 전체_df: pd.DataFrame, 작성자: str = "AI채팅") -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -723,6 +827,7 @@ def 노트_생성(제목: str, 내용: str = "", 태그: str = "") -> int:
     finally:
         conn.close()
     노트_목록_불러오기.clear()
+    노트_위키링크_동기화(새_id, 제목, 내용)
     return 새_id
 
 
@@ -737,9 +842,14 @@ def 노트_수정(노트_id: int, 변경필드: dict) -> None:
         set절 = ", ".join(f"{c} = ?" for c in 반영할_필드)
         conn.execute(f"UPDATE 노트 SET {set절} WHERE id = ?", [*반영할_필드.values(), int(노트_id)])
         conn.commit()
+        # 제목/내용 중 이번에 안 바뀐 쪽은 최신 행에서 읽어와, 위키링크 동기화는
+        # 항상 현재 제목·본문 기준으로 돌린다.
+        최신행 = conn.execute("SELECT 제목, 내용 FROM 노트 WHERE id = ?", (int(노트_id),)).fetchone()
     finally:
         conn.close()
     노트_목록_불러오기.clear()
+    if 최신행:
+        노트_위키링크_동기화(노트_id, 최신행[0], 최신행[1] or "")
 
 
 def 노트_삭제(노트_id: int) -> None:
@@ -750,6 +860,16 @@ def 노트_삭제(노트_id: int) -> None:
     finally:
         conn.close()
     노트_목록_불러오기.clear()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        # 노드 자체는 바로 안 지운다 — 다른 노트가 이 제목을 계속 링크하고 있을 수
+        # 있으므로, 엣지가 하나도 안 남을 때만 고아 정리로 자연스럽게 없어지게 둔다.
+        _온톨로지_고아노드_정리(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    온톨로지_노드_불러오기.clear()
+    온톨로지_관계_불러오기.clear()
 
 
 def 노트_검색(검색어: str | None = None) -> list[dict]:

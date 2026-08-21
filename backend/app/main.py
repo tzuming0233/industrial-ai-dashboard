@@ -85,7 +85,10 @@ def 내_세션(kpc_session: str | None = Cookie(default=None)):
 
 
 def _NaN_정리(df: pd.DataFrame) -> pd.DataFrame:
-    return df.where(pd.notna(df), None)
+    # astype(object) 없이 그냥 .where(notna, None)만 쓰면 NULL 섞인 정수 컬럼(float64로
+    # 읽힘)에서 대입한 None이 다시 NaN으로 되돌아가 json.dumps가 500을 낸다.
+    # (backend/app/ontology.py의 같은 이름 함수에서 실제로 겪은 버그 — 참고)
+    return df.astype(object).where(df.notna(), None)
 
 
 @app.get("/api/business")

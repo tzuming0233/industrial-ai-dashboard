@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addOntologyRelationDirect,
   deleteOntologyRelation,
@@ -10,7 +10,8 @@ import {
   type 온톨로지_관계,
   type 온톨로지_노드,
 } from '../api'
-import OntologyGraph, { type 그래프_노드, type 그래프_엣지 } from '../components/OntologyGraph'
+import OntologyGraph, { type 그래프_노드, type 그래프_엣지 } from './OntologyGraph'
+import Icon from './Icon'
 import { 고정_색상맵, 보조텍스트색 } from '../theme'
 
 function 노드_표시라벨(이름: string, 유형: string, 최대길이 = 16): string {
@@ -18,7 +19,16 @@ function 노드_표시라벨(이름: string, 유형: string, 최대길이 = 16):
   return 표시.length <= 최대길이 ? 표시 : 표시.slice(0, 최대길이) + '…'
 }
 
-export default function Ontology() {
+type Props = {
+  // 사이드 채팅에서 제안을 적용하는 등 DB가 바뀌었을 수 있을 때마다 값이 바뀌는 신호.
+  // 이 화면을 보고 있는 동안 사이드 채팅으로 관계를 추가/삭제해도 다시 탭을 오가지
+  // 않고 바로 반영되게 하기 위한 것 — 없으면 마운트 시 한 번만 불러온다.
+  데이터_갱신_신호?: number
+  // 그래프에서 노트에 연결된 노드를 클릭했을 때 "노트 열기"를 누르면 호출된다.
+  onOpenNote?: (노트_id: number) => void
+}
+
+export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Props) {
   const [businesses, setBusinesses] = useState<사업행[]>([])
   const [nodes, setNodes] = useState<온톨로지_노드[]>([])
   const [relations, setRelations] = useState<온톨로지_관계[]>([])
@@ -46,6 +56,15 @@ export default function Ontology() {
   useEffect(() => {
     새로고침().finally(() => setLoading(false))
   }, [])
+
+  const 첫_렌더_완료 = useRef(false)
+  useEffect(() => {
+    if (!첫_렌더_완료.current) {
+      첫_렌더_완료.current = true
+      return
+    }
+    새로고침()
+  }, [데이터_갱신_신호])
 
   const 사업_라벨_목록 = useMemo(
     () =>
@@ -156,11 +175,11 @@ export default function Ontology() {
 
   return (
     <div className="page">
-      <h2 className="page-title">사업 온톨로지</h2>
       <p className="sidebar-caption">
-        AI 채팅에서 '이 사업은 저 사업의 후속이야', '이 두 사업은 같은 고객사야' 같은 식으로 이야기하면
-        여기에 관계가 쌓입니다. 사업뿐 아니라 고객사·기술·담당자 등 자유로운 개념도 노드가 될 수 있습니다.
-        그래프에서 <b>노드를 클릭하면 관계 추가</b>, <b>선을 클릭하면 관계 삭제</b>를 할 수 있습니다.
+        AI 채팅에서 '이 사업은 저 사업의 후속이야', '이 두 사업은 같은 고객사야' 같은 식으로 이야기하거나,
+        노트 본문에 <b>[[다른 노트 제목]]</b>을 쓰면 여기에 관계가 자동으로 쌓입니다. 사업뿐 아니라
+        노트·고객사·기술·담당자 등 자유로운 개념도 노드가 될 수 있습니다. 그래프에서{' '}
+        <b>노드를 클릭하면 관계 추가</b>, <b>선을 클릭하면 관계 삭제</b>를 할 수 있습니다.
       </p>
 
       <div className="project-popover-wrap">
@@ -197,7 +216,7 @@ export default function Ontology() {
         <div className="alert alert-info">
           {선택된_사업id.length > 0
             ? '선택한 사업들에 대해 아직 쌓인 관계가 없습니다. AI 채팅에서 이야기해보세요.'
-            : '아직 쌓인 온톨로지가 없습니다. AI 채팅에서 사업들 간의 관계를 이야기해보세요.'}
+            : '아직 쌓인 온톨로지가 없습니다. AI 채팅에서 이야기하거나 노트에 [[다른 노트 제목]]을 써보세요.'}
         </div>
       ) : (
         <>
@@ -241,6 +260,15 @@ export default function Ontology() {
               <p>
                 선택한 노드: <b>{클릭된_노드.이름}</b> ({클릭된_노드.유형}) — 다른 노드와 연결해보세요.
               </p>
+              {클릭된_노드.노트_id != null && onOpenNote && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => onOpenNote(클릭된_노드.노트_id as number)}
+                >
+                  <Icon name="book" size={14} />
+                  노트 열기
+                </button>
+              )}
               <select
                 className="text-input"
                 value={연결대상id ?? ''}
@@ -313,7 +341,7 @@ export default function Ontology() {
         <details className="ontology-reset-box">
           <summary>온톨로지 전체 초기화</summary>
           <div className="alert alert-warning" style={{ marginTop: 8 }}>
-            모든 사업/개념 노드와 관계가 삭제됩니다. 되돌릴 수 없습니다.
+            모든 사업/개념/노트 노드와 관계가 삭제됩니다. 되돌릴 수 없습니다(노트 자체는 남습니다).
           </div>
           <label className="radio-label" style={{ margin: '8px 0' }}>
             <input type="checkbox" checked={초기화_확인} onChange={(e) => set초기화_확인(e.target.checked)} />

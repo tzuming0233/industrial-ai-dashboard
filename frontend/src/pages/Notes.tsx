@@ -12,9 +12,15 @@ import {
   type 노트_요약,
 } from '../api'
 import Icon from '../components/Icon'
+import OntologyView from '../components/OntologyView'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
-export default function Notes() {
+type Props = {
+  데이터_갱신_신호?: number
+}
+
+export default function Notes({ 데이터_갱신_신호 }: Props) {
+  const [보기_모드, set보기_모드] = useState<'노트' | '그래프'>('노트')
   const [목록, set목록] = useState<노트_요약[]>([])
   const [loading, setLoading] = useState(true)
   const [검색어, set검색어] = useState('')
@@ -140,6 +146,36 @@ export default function Notes() {
   if (loading) return <p className="page-loading">불러오는 중...</p>
 
   return (
+    <div className="notes-page-wrap">
+      <div className="notes-page-header">
+        <h2 className="page-title">위키</h2>
+        <div className="segmented">
+          <button
+            className={`segmented-item ${보기_모드 === '노트' ? 'segmented-item-active' : ''}`}
+            onClick={() => set보기_모드('노트')}
+          >
+            노트
+          </button>
+          <button
+            className={`segmented-item ${보기_모드 === '그래프' ? 'segmented-item-active' : ''}`}
+            onClick={() => set보기_모드('그래프')}
+          >
+            그래프
+          </button>
+        </div>
+      </div>
+
+      {보기_모드 === '그래프' ? (
+        <div className="notes-graph-wrap">
+          <OntologyView
+            데이터_갱신_신호={데이터_갱신_신호}
+            onOpenNote={(노트_id) => {
+              set보기_모드('노트')
+              set선택id(노트_id)
+            }}
+          />
+        </div>
+      ) : (
     <div className="notes-page">
       <div className="notes-sidebar">
         <button className="btn btn-primary btn-block sidebar-action-btn" onClick={새_노트}>
@@ -233,7 +269,7 @@ export default function Notes() {
                 className="text-input notes-textarea"
                 value={내용_입력}
                 onChange={(e) => set내용_입력(e.target.value)}
-                placeholder="노트 내용을 마크다운으로 작성하세요..."
+                placeholder="노트 내용을 마크다운으로 작성하세요... [[다른 노트 제목]]을 쓰면 그래프에 자동으로 연결됩니다."
               />
             ) : (
               <div className="notes-wiki-view assistant-text">
@@ -284,6 +320,8 @@ export default function Notes() {
           </>
         )}
       </div>
+    </div>
+      )}
     </div>
   )
 }

@@ -88,6 +88,7 @@ export type 온톨로지_노드 = {
   유형: string
   이름: string
   사업_id: number | null
+  노트_id: number | null
   생성일시: string
 }
 

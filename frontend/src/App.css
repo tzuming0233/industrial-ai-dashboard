@@ -1148,11 +1148,32 @@
   font-size: 14px;
 }
 
-/* ---------- 위키(노트) ---------- */
+/* ---------- 위키(노트 + 온톨로지 그래프 통합 탭) ---------- */
+
+.notes-page-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.notes-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 0;
+}
+
+.notes-graph-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 .notes-page {
   display: flex;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   width: 100%;
 }
 

@@ -14,7 +14,11 @@ router = APIRouter(dependencies=[Depends(auth.인증_확인)], prefix="/api/onto
 
 
 def _NaN_정리(df: pd.DataFrame) -> list[dict]:
-    return df.where(pd.notna(df), None).to_dict("records")
+    # df.where(pd.notna(df), None)만 쓰면 사업_id/노트_id처럼 NULL 섞인 정수 컬럼이
+    # float64로 읽혀서, 대입한 None이 다시 NaN으로 되돌아간다(float64 배열은 파이썬
+    # None을 못 담음) — json.dumps가 NaN을 못 쓰는 값으로 보고 500을 낸다. astype(object)로
+    # 먼저 바꿔야 None이 실제로 남는다.
+    return df.astype(object).where(df.notna(), None).to_dict("records")
 
 
 @router.get("/nodes")

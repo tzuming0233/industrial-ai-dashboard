@@ -17,7 +17,6 @@ import TopNav, { type Tab } from './components/TopNav'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const RevenueTable = lazy(() => import('./pages/RevenueTable'))
 const Milestone = lazy(() => import('./pages/Milestone'))
-const Ontology = lazy(() => import('./pages/Ontology'))
 const Notes = lazy(() => import('./pages/Notes'))
 
 function App() {
@@ -30,6 +29,9 @@ function App() {
   const [businesses, setBusinesses] = useState<사업행[]>([])
   const [currentId, setCurrentId] = useState<number | null>(null)
   const [초기화중, set초기화중] = useState(true)
+  // 사이드 채팅에서 메시지 전송·제안 적용/취소가 끝날 때마다 증가 — 지금 보고 있는
+  // 탭(예: 위키의 그래프 뷰)이 DB 변경을 놓치지 않고 다시 불러오게 하는 공용 신호.
+  const [데이터_갱신_신호, set데이터_갱신_신호] = useState(0)
 
   useEffect(() => {
     api<{ 인증됨: boolean }>('/api/me')
@@ -147,8 +149,7 @@ function App() {
               {탭 === '대시보드' && <Dashboard />}
               {탭 === '매출현황 표' && <RevenueTable />}
               {탭 === '마일스톤' && <Milestone />}
-              {탭 === '사업 온톨로지' && <Ontology />}
-              {탭 === '위키' && <Notes />}
+              {탭 === '위키' && <Notes 데이터_갱신_신호={데이터_갱신_신호} />}
             </Suspense>
           </div>
         )}
@@ -156,7 +157,14 @@ function App() {
         {/* 탭을 옮겨도 스트리밍 중인 응답이 끊기지 않도록 ChatMain은 항상 마운트된 채로
             유지하고, AI 채팅 탭에서는 넓게·다른 탭에서는 좁은 사이드 패널로만 보여준다. */}
         <div className={`chat-panel ${AI채팅_탭 ? 'chat-panel-wide' : 'chat-panel-narrow'}`}>
-          <ChatMain key={currentId} conversationId={currentId} onActivity={refreshConversations} />
+          <ChatMain
+            key={currentId}
+            conversationId={currentId}
+            onActivity={() => {
+              refreshConversations()
+              set데이터_갱신_신호((v) => v + 1)
+            }}
+          />
         </div>
       </div>
     </div>
