@@ -53,6 +53,13 @@ export type 사업행 = {
   당해년도수입금액: number
 }
 
+// '데이터 관리' 탭의 편집 테이블용 — 저장 전 새 행은 id가 아직 없다.
+export type 편집_사업행 = Omit<사업행, 'id'> & { id: number | null }
+
+export type 연간목표행 = { id: number; 연도: number; 목표매출: number; 목표손익: number }
+
+export type 투입인력행 = { id: number; 사업_id: number; 이름: string; 역할: string | null }
+
 export type 건수행 = { 건수: number; [key: string]: unknown }
 
 export type 마감임박행 = {
@@ -190,6 +197,30 @@ export const deleteOntologyRelation = (id: number) =>
   api<{ ok: boolean }>(`/api/ontology/relations/${id}`, { method: 'DELETE' })
 
 export const resetOntology = () => api<{ ok: boolean }>('/api/ontology/reset', { method: 'POST' })
+
+export const saveBusinessRows = (행: 편집_사업행[], 작성자: string) =>
+  api<{ ok: boolean }>('/api/business/save', {
+    method: 'POST',
+    body: JSON.stringify({ 행, 작성자 }),
+  })
+
+export const getAnnualTargets = () => api<연간목표행[]>('/api/targets')
+
+export const saveAnnualTarget = (연도: number, 목표매출: number, 목표손익: number) =>
+  api<{ ok: boolean }>('/api/targets', {
+    method: 'POST',
+    body: JSON.stringify({ 연도, 목표매출, 목표손익 }),
+  })
+
+export const getStaffing = (사업_id: number) => api<투입인력행[]>(`/api/staffing/${사업_id}`)
+
+export const addStaffing = (사업_id: number, 이름: string, 역할: string) =>
+  api<{ ok: boolean }>('/api/staffing', {
+    method: 'POST',
+    body: JSON.stringify({ 사업_id, 이름, 역할 }),
+  })
+
+export const deleteStaffing = (id: number) => api<{ ok: boolean }>(`/api/staffing/${id}`, { method: 'DELETE' })
 
 export async function exportXlsx(행: Record<string, unknown>[], 파일명: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/export/xlsx`, {

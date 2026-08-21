@@ -18,6 +18,7 @@ export type IconName =
   | 'book'
   | 'mic'
   | 'download'
+  | 'edit'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -56,6 +57,9 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   download: <path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4.5 17.5V20a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-2.5" />,
+  edit: (
+    <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z M13 6.5l3 3" />
+  ),
 }
 
 export default function Icon({ name, size = 16 }: { name: IconName; size?: number }) {

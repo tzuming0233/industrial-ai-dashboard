@@ -97,6 +97,23 @@ def 사업현황(_인증: None = Depends(_인증_확인)):
     return _NaN_정리(df).to_dict("records")
 
 
+class _사업현황_저장_요청(BaseModel):
+    행: list[dict]
+    작성자: str
+
+
+@app.post("/api/business/save")
+def 사업현황_저장_엔드포인트(요청: _사업현황_저장_요청, _인증: None = Depends(_인증_확인)):
+    """'데이터 관리' 탭의 스프레드시트 편집 결과를 저장한다 — Streamlit의
+    st.data_editor + 저장 버튼과 완전히 같은 repo.사업현황_저장을 그대로 쓴다.
+    행에 id가 없으면(신규 행) 그 함수 내부의 기존 분기가 추가로 처리하고,
+    원래 있던 id가 이번 목록에 없으면 삭제로 처리된다 — 로직 변경 없음."""
+    전체_df = repo.사업현황_불러오기()
+    편집_df = pd.DataFrame(요청.행, columns=repo.편집_컬럼순서)
+    repo.사업현황_저장(편집_df, 전체_df, 요청.작성자)
+    return {"ok": True}
+
+
 @app.get("/api/dashboard-summary")
 def 대시보드_요약(_인증: None = Depends(_인증_확인)):
     df = repo.사업현황_불러오기()
@@ -198,7 +215,9 @@ def 생성파일_다운로드(file_id: int, _인증: None = Depends(_인증_확�
 from backend.app.chat import router as _채팅_라우터  # noqa: E402 (순환 임포트 방지 위해 하단 배치)
 from backend.app.ontology import router as _온톨로지_라우터  # noqa: E402
 from backend.app.notes import router as _노트_라우터  # noqa: E402
+from backend.app.data_management import router as _데이터관리_라우터  # noqa: E402
 
 app.include_router(_채팅_라우터)
 app.include_router(_온톨로지_라우터)
 app.include_router(_노트_라우터)
+app.include_router(_데이터관리_라우터)

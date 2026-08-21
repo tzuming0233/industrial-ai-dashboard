@@ -18,6 +18,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const RevenueTable = lazy(() => import('./pages/RevenueTable'))
 const Milestone = lazy(() => import('./pages/Milestone'))
 const Notes = lazy(() => import('./pages/Notes'))
+const DataManagement = lazy(() => import('./pages/DataManagement'))
 
 function App() {
   const [인증됨, set인증됨] = useState<boolean | null>(null)
@@ -150,6 +151,7 @@ function App() {
               {탭 === '매출현황 표' && <RevenueTable />}
               {탭 === '마일스톤' && <Milestone />}
               {탭 === '위키' && <Notes 데이터_갱신_신호={데이터_갱신_신호} />}
+              {탭 === '데이터 관리' && <DataManagement 데이터_갱신_신호={데이터_갱신_신호} />}
             </Suspense>
           </div>
         )}
