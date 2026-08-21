@@ -86,6 +86,19 @@ SYSTEM_PROMPT = (
     "제안하세요(수정은 반드시 먼저 query_notes로 정확한 id를 확인). 노트끼리, 또는 노트와 사업 사이에 관련이 "
     "있다는 이야기가 나오면 propose_add_relations를 그대로 쓰되 노드 유형을 '노트'로, 이름은 노트 제목으로 "
     "지정하세요 — 옵시디언의 위키링크처럼 노트는 제목으로 식별되므로 같은 제목이면 같은 노드로 합쳐집니다.\n"
+    "- 사내 데이터로 답할 수 없는 최신 정보(뉴스, 특정 기업/기술 동향, 최근 정책·규정, 업계 시황 등)가 "
+    "필요하면 web_search로 실제로 찾아본 뒤 답하세요. 사업현황·노트·온톨로지로 답할 수 있는 질문에는 "
+    "굳이 웹 검색을 쓰지 마세요.\n"
+    "- 답변 형식은 절제하세요. 목록·굵은 글씨·제목을 남발하지 말고 대화하듯 자연스러운 문장으로 답하는 "
+    "것을 기본으로 하고, 여러 항목을 비교하거나 구조 자체가 실제로 이해에 도움이 될 때만 표나 목록을 "
+    "쓰세요.\n"
+    "- 요청이 여러 갈래로 해석되고 그 차이가 결과에 실질적인 영향을 줄 때는(예: 어느 사업을 가리키는지 "
+    "특정이 안 될 때, 삭제·수정 범위가 애매할 때) 짐작해서 진행하지 말고 짧게 되물으세요. 상식적으로 뜻이 "
+    "분명한 경우까지 되묻지 말라는 원칙은 그대로입니다 — 정말 갈림길일 때만 확인하세요.\n"
+    "- 조회 결과(query_business_status, query_ontology, query_notes, web_search 등)를 근거로 답할 때는 "
+    "어디서 나온 정보인지 자연스럽게 밝히세요(예: '현재 DB 기준으로는...', '웹 검색 결과에 따르면...'). "
+    "특히 web_search로 얻은 정보는 사내 데이터와 성격이 다르므로, 시점이나 출처가 중요한 맥락이면 "
+    "언급하세요.\n"
     "- 한 턴에 제안 도구는 한 번만 호출하세요."
 )
 
@@ -384,6 +397,16 @@ TOOLS = [
             "required": ["filename", "content"],
         },
     },
+    # Anthropic이 서버에서 직접 실행하는 서버 도구 — 클라이언트 쪽 실행 코드(_도구_실행 분기)가
+    # 필요 없다. tool_use가 아니라 server_tool_use/web_search_tool_result 블록으로 응답에 섞여
+    # 오고, stop_reason도 보통 "tool_use"가 아니라 "end_turn"이라 기존 도구 호출 루프를 그대로
+    # 통과한다(질의하기_스트림의 for block ... if block.type != "tool_use": continue가 자연히
+    # 걸러줌).
+    {
+        "type": "web_search_20260209",
+        "name": "web_search",
+        "max_uses": 5,
+    },
 ]
 
 제안_도구명들 = {
@@ -406,6 +429,7 @@ _도구_상태_문구 = {
     "propose_add_note": "노트 내용을 정리하는 중...",
     "propose_update_note": "수정할 노트 내용을 정리하는 중...",
     "create_file": "파일을 만드는 중...",
+    "web_search": "웹을 검색하는 중...",
 }
 
 
@@ -733,6 +757,43 @@ def 업로드_매핑_추론(원본_컬럼들: list[str], 샘플_행들: list[dic
     return json.loads(_텍스트_추출(response).strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
 
 
+def 대화_요약_생성(기존_요약: str | None, 새_메시지들: list[dict], api_key: str | None = None) -> str:
+    """대화 중 화면 범위(최근 20개)보다 오래돼 API에 그대로 안 보내는 부분을 요약한다.
+
+    매번 전체를 다시 요약하지 않고, 이미 요약된 부분 이후로 새로 오래된 취급을 받게 된
+    메시지들만 기존 요약에 덧붙여 갱신한다(호출부가 이 델타만 넘겨줌) — 대화가 아무리
+    길어져도 매 턴 비용이 늘지 않는다. 제목 생성처럼 가벼운 작업이라 저렴한 모델을 쓴다.
+    """
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        try:
+            import streamlit as st
+            key = st.secrets.get("ANTHROPIC_API_KEY")
+        except Exception:
+            key = None
+    if not key:
+        return 기존_요약 or ""
+
+    대화_텍스트 = "\n".join(f"{m['role']}: {m['content']}" for m in 새_메시지들)
+    프롬프트 = (
+        "다음은 사용자와 AI 사이의 대화 중, 화면에 보이는 최근 범위보다 오래돼 앞으로는 요약으로만 "
+        "참조될 부분입니다. 이후 대화에서 이 요약만 보고도 맥락을 이어갈 수 있도록, 핵심 사실(언급된 "
+        "사업명·수치·날짜, 사용자가 내린 결정이나 선호, 반복해서 나온 주제)을 중심으로 간결한 한국어 "
+        "요약을 작성하세요. 사소한 인사말이나 일반적인 대화 흐름은 굳이 담지 않아도 됩니다.\n\n"
+        + (f"[기존 요약]\n{기존_요약}\n\n" if 기존_요약 else "")
+        + f"[새로 반영할 대화]\n{대화_텍스트}\n\n"
+        "설명 없이 갱신된 요약 본문만 출력하세요."
+    )
+    try:
+        client = Anthropic(api_key=key)
+        response = client.messages.create(
+            model=제목생성_MODEL_NAME, max_tokens=1024, messages=[{"role": "user", "content": 프롬프트}],
+        )
+        return _텍스트_추출(response).strip() or (기존_요약 or "")
+    except Exception:
+        return 기존_요약 or ""
+
+
 def 대화_제목_생성(첫_메시지: str, api_key: str | None = None) -> str:
     """대화의 첫 메시지를 짧은 제목으로 요약한다. 실패하면 원문을 잘라 그대로 돌려준다."""
     기본_제목 = 첫_메시지.strip().splitlines()[0][:30] if 첫_메시지.strip() else "새 대화"
@@ -859,8 +920,17 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
         with client.messages.stream(
             model=MODEL_NAME, max_tokens=8192, system=SYSTEM_PROMPT, messages=messages, tools=TOOLS,
         ) as stream:
-            for text in stream.text_stream:
-                yield {"type": "token", "text": text}
+            # text_stream만 쓰면 web_search 같은 서버 도구가 실행되는 동안(같은 응답 안에서
+            # 클라이언트 왕복 없이 일어남) 화면에 아무 신호도 안 뜬다. 원시 이벤트를 직접 봐서
+            # server_tool_use 블록이 시작될 때도 상태 문구를 띄운다.
+            for event in stream:
+                if event.type == "content_block_start" and event.content_block.type == "server_tool_use":
+                    yield {
+                        "type": "status",
+                        "text": _도구_상태_문구.get(event.content_block.name, f"{event.content_block.name} 실행 중..."),
+                    }
+                elif event.type == "content_block_delta" and event.delta.type == "text_delta":
+                    yield {"type": "token", "text": event.delta.text}
             response = stream.get_final_message()
 
         if response.stop_reason != "tool_use":

@@ -106,6 +106,13 @@ def 채팅_DB_준비():
         기존_대화_컬럼 = {row[1] for row in conn.execute("PRAGMA table_info(대화)")}
         if "사업_id" not in 기존_대화_컬럼:
             conn.execute("ALTER TABLE 대화 ADD COLUMN 사업_id INTEGER")
+        # 긴 대화에서 API에 매번 보내는 최근 20개 밖의 오래된 부분을 담아두는 요약.
+        # 요약_메시지수는 지금까지 이 요약에 반영된 메시지가 몇 개인지 — 다음번에 새로
+        # "오래된" 취급을 받게 된 메시지만 델타로 요약에 덧붙이기 위한 커서 역할을 한다.
+        if "요약" not in 기존_대화_컬럼:
+            conn.execute("ALTER TABLE 대화 ADD COLUMN 요약 TEXT")
+        if "요약_메시지수" not in 기존_대화_컬럼:
+            conn.execute("ALTER TABLE 대화 ADD COLUMN 요약_메시지수 INTEGER DEFAULT 0")
         conn.commit()
     finally:
         conn.close()
@@ -432,6 +439,28 @@ def 대화_제목_설정(대화_id: int, 제목: str) -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute("UPDATE 대화 SET 제목 = ? WHERE id = ?", (제목, 대화_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def 대화_요약_불러오기(대화_id: int) -> tuple[str | None, int]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute("SELECT 요약, 요약_메시지수 FROM 대화 WHERE id = ?", (대화_id,)).fetchone()
+        if not row:
+            return None, 0
+        return row[0], row[1] or 0
+    finally:
+        conn.close()
+
+
+def 대화_요약_저장(대화_id: int, 요약: str, 메시지수: int) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "UPDATE 대화 SET 요약 = ?, 요약_메시지수 = ? WHERE id = ?", (요약, 메시지수, 대화_id)
+        )
         conn.commit()
     finally:
         conn.close()
