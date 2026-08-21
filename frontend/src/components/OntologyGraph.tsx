@@ -37,22 +37,6 @@ type Props = {
   compact?: boolean
 }
 
-const 매니퓰레이션_한글 = {
-  edit: '편집',
-  del: '삭제',
-  back: '뒤로',
-  addNode: '노드 추가',
-  addDescription: '원하는 위치를 클릭해 노드를 추가하세요.',
-  addEdge: '관계 추가',
-  edgeDescription: '한 노드에서 다른 노드로 드래그해 연결하세요.',
-  editNode: '노드 편집',
-  editEdge: '관계 편집',
-  editEdgeDescription: '연결의 끝점을 드래그해 다른 노드로 옮기세요.',
-  createEdgeError: '노드가 아닌 곳에는 연결을 만들 수 없습니다.',
-  deleteClusterError: '클러스터는 삭제할 수 없습니다.',
-  editClusterError: '클러스터는 편집할 수 없습니다.',
-}
-
 export default function OntologyGraph({
   nodes,
   edges,
@@ -87,15 +71,17 @@ export default function OntologyGraph({
         },
         physics: {
           solver: 'repulsion',
-          repulsion: { nodeDistance: 200, centralGravity: 0.15, springLength: 200, springStrength: 0.03, damping: 0.9 },
+          repulsion: { nodeDistance: 200, centralGravity: 0.15, springLength: 200, springConstant: 0.03, damping: 0.9 },
           stabilization: { enabled: true, iterations: 300, fit: true },
         },
+        // 한글 라벨(locale/locales)은 vis-network 내부에서 "en" 로케일 존재를 전제하는
+        // 폴백 코드가 있어(예: 닫기 버튼 aria-label) 커스텀 로케일을 통째로 지정하면
+        // 그 폴백이 깨져 크래시로 이어진다 — 안전하게 기본 영어 라벨을 그대로 쓴다.
         ...(onDragConnect
           ? {
               manipulation: {
                 enabled: true,
                 addNode: false,
-                editNode: false,
                 editEdge: false,
                 deleteNode: false,
                 deleteEdge: false,
@@ -105,8 +91,6 @@ export default function OntologyGraph({
                   }
                   callback(null) // 로컬 데이터셋에는 추가하지 않는다 — 실제 저장은 부모의 확인 폼을 거친다.
                 },
-                locale: 'ko',
-                locales: { ko: 매니퓰레이션_한글 },
               },
             }
           : {}),
