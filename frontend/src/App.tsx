@@ -125,31 +125,39 @@ function App() {
     return <p style={{ padding: 24 }}>불러오는 중...</p>
   }
 
+  const AI채팅_탭 = 탭 === 'AI 채팅'
+
   return (
     <div className="app-shell">
       <TopNav current={탭} onChange={set탭} />
-      <div className={`app-body ${탭 !== 'AI 채팅' && 탭 !== '위키' ? 'app-body-scroll' : ''}`}>
-        {탭 === 'AI 채팅' && (
-          <div className="app-layout">
-            <Sidebar
-              conversations={conversations}
-              currentId={currentId}
-              businesses={businesses}
-              onSelect={setCurrentId}
-              onNew={onNew}
-              onNewWithProject={onNewWithProject}
-              onDelete={onDelete}
-            />
-            <ChatMain key={currentId} conversationId={currentId} onActivity={refreshConversations} />
+      <div className="app-body">
+        {AI채팅_탭 ? (
+          <Sidebar
+            conversations={conversations}
+            currentId={currentId}
+            businesses={businesses}
+            onSelect={setCurrentId}
+            onNew={onNew}
+            onNewWithProject={onNewWithProject}
+            onDelete={onDelete}
+          />
+        ) : (
+          <div className={`main-pane ${탭 === '위키' ? '' : 'main-pane-scroll'}`}>
+            <Suspense fallback={<p className="page-loading">불러오는 중...</p>}>
+              {탭 === '대시보드' && <Dashboard />}
+              {탭 === '매출현황 표' && <RevenueTable />}
+              {탭 === '마일스톤' && <Milestone />}
+              {탭 === '사업 온톨로지' && <Ontology />}
+              {탭 === '위키' && <Notes />}
+            </Suspense>
           </div>
         )}
-        <Suspense fallback={<p className="page-loading">불러오는 중...</p>}>
-          {탭 === '대시보드' && <Dashboard />}
-          {탭 === '매출현황 표' && <RevenueTable />}
-          {탭 === '마일스톤' && <Milestone />}
-          {탭 === '사업 온톨로지' && <Ontology />}
-          {탭 === '위키' && <Notes />}
-        </Suspense>
+
+        {/* 탭을 옮겨도 스트리밍 중인 응답이 끊기지 않도록 ChatMain은 항상 마운트된 채로
+            유지하고, AI 채팅 탭에서는 넓게·다른 탭에서는 좁은 사이드 패널로만 보여준다. */}
+        <div className={`chat-panel ${AI채팅_탭 ? 'chat-panel-wide' : 'chat-panel-narrow'}`}>
+          <ChatMain key={currentId} conversationId={currentId} onActivity={refreshConversations} />
+        </div>
       </div>
     </div>
   )

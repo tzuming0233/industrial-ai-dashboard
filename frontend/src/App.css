@@ -47,18 +47,40 @@
   overflow: hidden;
 }
 
-/* AI 채팅 탭은 내부(메시지 목록)만 스크롤되는 고정 레이아웃을 유지하고,
-   나머지 읽기전용 탭은 화면 전체가 자연스럽게 스크롤되게 한다. */
-.app-body-scroll {
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: block;
+/* 탭을 옮겨도 진행 중인 AI 응답이 끊기지 않도록, ChatMain은 항상 마운트된 채로
+   .chat-panel 안에 있고 폭만 탭에 따라 달라진다(AI 채팅 탭=넓게, 그 외=좁은 사이드 패널). */
+.main-pane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
 }
 
-.app-layout {
+.main-pane-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.chat-panel {
   display: flex;
+  flex-direction: column;
   height: 100%;
-  width: 100%;
+  min-width: 0;
+}
+
+.chat-panel-wide {
+  flex: 1;
+}
+
+.chat-panel-narrow {
+  width: 380px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--테두리색);
+}
+
+@media (max-width: 900px) {
+  .chat-panel-narrow {
+    display: none;
+  }
 }
 
 /* ---------- 상단 네비게이션 ---------- */
