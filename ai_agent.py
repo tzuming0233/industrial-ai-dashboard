@@ -353,6 +353,33 @@ TOOLS = [
             "required": ["id", "changes"],
         },
     },
+    {
+        "name": "create_file",
+        "description": (
+            "사용자가 다운로드할 수 있는 실제 파일을 만든다. 확인 없이 즉시 만들어져 채팅에 다운로드 "
+            "링크로 뜬다(다른 propose_* 도구와 달리 사용자 확인 절차가 없음 — 되돌릴 위험이 있는 "
+            "동작이 아니기 때문). 답변이 코드/보고서/정리된 문서/표 형태의 데이터처럼 그 자체로 "
+            "파일로 저장해둘 가치가 있다고 판단되면, 사용자가 명시적으로 요청하지 않아도 먼저 "
+            "제안하듯 만들어도 된다. 단, content의 형식은 filename 확장자에 따라 반드시 다음 규칙을 "
+            "따라야 한다 — 규칙을 어기면 파일이 깨진다:\n"
+            "- .xlsx: content를 쉼표로 구분된 CSV 텍스트로 작성(첫 줄은 헤더). 예: 'a,b\\n1,2\\n3,4'\n"
+            "- .docx: content를 마크다운으로 작성. '# '는 제목1, '## '는 제목2, '### '는 제목3, "
+            "'- '는 글머리 목록, 그 외 줄은 일반 본문 문단으로 변환된다.\n"
+            "- .pptx: 슬라이드를 줄 단독으로 '---'만 있는 줄로 구분한다. 각 슬라이드의 첫 줄이 제목"
+            "('# ' 접두사는 있어도 없어도 됨), 이후 줄들이 본문 목록이 된다.\n"
+            "- 그 외 확장자(.md/.txt/.py/.js/.ts/.html/.css/.json/.csv/.sql/.yaml 등)는 content를 "
+            "그대로 텍스트 파일로 만든다 — 실제 만들려는 내용 그대로 작성하면 된다.\n"
+            "한 턴에 파일은 최대 1개만 만드세요."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "확장자를 포함한 파일명. 예: '분기보고서.docx', '데이터.xlsx'"},
+                "content": {"type": "string", "description": "위 설명의 확장자별 규칙에 맞춰 작성한 파일 내용"},
+            },
+            "required": ["filename", "content"],
+        },
+    },
 ]
 
 제안_도구명들 = {
@@ -374,6 +401,7 @@ _도구_상태_문구 = {
     "query_notes": "노트를 조회하는 중...",
     "propose_add_note": "노트 내용을 정리하는 중...",
     "propose_update_note": "수정할 노트 내용을 정리하는 중...",
+    "create_file": "파일을 만드는 중...",
 }
 
 
@@ -532,6 +560,13 @@ def propose_update_note(id: int, 변경필드: dict) -> dict:
     return {"확인": f"id={id} 노트의 {list(변경필드.keys())} 변경을 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
+def create_file(파일명: str, 내용: str) -> dict:
+    """다른 propose_* 함수들처럼 확인 문구만 돌려준다 — 실제 바이트 생성은 스트리밍 루프
+    (질의하기_스트림)에서만 하고 tool_result에는 포함하지 않는다(컨텍스트에 바이너리를 안 넣기 위함).
+    블로킹 버전(질의하기, Streamlit용)에서 호출돼도 에러 없이 확인만 하고 끝난다."""
+    return {"확인": f"'{파일명}' 파일을 만들었습니다. 화면에 다운로드 링크가 표시됩니다."}
+
+
 def 노트_위키_정리(내용: str, api_key: str | None = None) -> str:
     """원본 노트를 구조화된 위키 문서로 정리한다. 원문에 없는 사실을 지어내지 않고, 제목/섹션 구성만 다듬는다."""
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -571,6 +606,7 @@ _상위_키_매핑 = {
     "query_notes": {"query": "검색어"},
     "propose_add_note": {"title": "제목", "content": "내용", "tags": "태그"},
     "propose_update_note": {"changes": "변경필드"},
+    "create_file": {"filename": "파일명", "content": "내용"},
 }
 
 _사업항목_키_매핑 = {
@@ -626,6 +662,8 @@ def _도구_실행(name: str, tool_input: dict):
         return propose_add_note(**tool_input)
     if name == "propose_update_note":
         return propose_update_note(**tool_input)
+    if name == "create_file":
+        return create_file(**tool_input)
     raise ValueError(f"알 수 없는 도구: {name}")
 
 
@@ -789,10 +827,10 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
     """질의하기()의 스트리밍 버전 — FastAPI SSE 엔드포인트 전용.
 
     제너레이터: 텍스트가 도착할 때마다 {"type": "token", "text": "..."}를 yield하고,
-    턴이 끝나면 마지막으로 {"type": "final", "text": 전체답변, "pending_action": ...}을
-    한 번 yield한다(Streamlit용 질의하기()와 반환 형태를 맞췄다). tool_use 루프 로직은
-    질의하기()와 동일 — 브라우저가 받은 토큰이 아니라 stream.get_final_message()만
-    신뢰해서 도구 호출을 판단한다.
+    턴이 끝나면 마지막으로 {"type": "final", "text": 전체답변, "pending_action": ...,
+    "생성된_파일": ...}을 한 번 yield한다(Streamlit용 질의하기()와 반환 형태를 맞췄다 —
+    다만 생성된_파일은 스트리밍 전용 필드). tool_use 루프 로직은 질의하기()와 동일 —
+    브라우저가 받은 토큰이 아니라 stream.get_final_message()만 신뢰해서 도구 호출을 판단한다.
     """
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
@@ -800,6 +838,7 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
             "type": "final",
             "text": "ANTHROPIC_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인하세요.",
             "pending_action": None,
+            "생성된_파일": None,
         }
         return
 
@@ -807,20 +846,24 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
     messages = list(history or []) + [{"role": "user", "content": question}]
 
     대기중_제안 = None
+    생성된_파일 = None
     for 회차 in range(5):  # 도구 호출 반복 상한
         yield {
             "type": "status",
             "text": "요청을 확인하는 중..." if 회차 == 0 else "조회 결과를 반영해서 답변을 정리하는 중...",
         }
         with client.messages.stream(
-            model=MODEL_NAME, max_tokens=4096, system=SYSTEM_PROMPT, messages=messages, tools=TOOLS,
+            model=MODEL_NAME, max_tokens=8192, system=SYSTEM_PROMPT, messages=messages, tools=TOOLS,
         ) as stream:
             for text in stream.text_stream:
                 yield {"type": "token", "text": text}
             response = stream.get_final_message()
 
         if response.stop_reason != "tool_use":
-            yield {"type": "final", "text": _텍스트_추출(response), "pending_action": 대기중_제안}
+            yield {
+                "type": "final", "text": _텍스트_추출(response),
+                "pending_action": 대기중_제안, "생성된_파일": 생성된_파일,
+            }
             return
 
         messages.append({"role": "assistant", "content": response.content})
@@ -834,6 +877,12 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
             결과 = _도구_실행(block.name, 도구_인자)
             if block.name in 제안_도구명들:
                 대기중_제안 = {"유형": block.name, "인자": 도구_인자}
+            if block.name == "create_file":
+                from backend.app.files import 파일_mime타입, 파일_생성_바이트
+
+                파일명 = 도구_인자.get("파일명", "생성파일.txt")
+                내용_바이트 = 파일_생성_바이트(파일명, 도구_인자.get("내용", ""))
+                생성된_파일 = {"파일명": 파일명, "mime타입": 파일_mime타입(파일명), "내용": 내용_바이트}
             결과_블록들.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
@@ -841,4 +890,7 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
             })
         messages.append({"role": "user", "content": 결과_블록들})
 
-    yield {"type": "final", "text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.", "pending_action": 대기중_제안}
+    yield {
+        "type": "final", "text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.",
+        "pending_action": 대기중_제안, "생성된_파일": 생성된_파일,
+    }

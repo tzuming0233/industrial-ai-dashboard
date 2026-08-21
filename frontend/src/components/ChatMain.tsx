@@ -4,10 +4,12 @@ import remarkGfm from 'remark-gfm'
 import {
   applyProposal,
   cancelProposal,
+  fileDownloadUrl,
   getMessages,
   streamMessage,
   type 대기중_제안,
   type 메시지,
+  type 생성_파일,
 } from '../api'
 import ProposalCard from './ProposalCard'
 import Icon from './Icon'
@@ -33,6 +35,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
   const [streamingText, setStreamingText] = useState('')
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [최근_생성파일, set최근_생성파일] = useState<생성_파일 | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -48,6 +51,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     setPendingProposal(null)
     setStreamingText('')
     setIsStreaming(false)
+    set최근_생성파일(null)
     abortRef.current?.abort()
 
     getMessages(conversationId)
@@ -85,6 +89,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     setError(null)
     setStreamingStatus(null)
     setStreamingText('')
+    set최근_생성파일(null)
     setIsStreaming(true)
 
     const controller = new AbortController()
@@ -110,6 +115,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
           if (data.제안 && data.action_token) {
             setPendingProposal({ 요약: data.제안, action_token: data.action_token })
           }
+          set최근_생성파일(data.생성_파일 ?? null)
           onActivity()
         },
         onError: (message) => {
@@ -188,6 +194,17 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
             </div>
           ),
+        )}
+
+        {!isStreaming && 최근_생성파일 && (
+          <a
+            className="generated-file-chip"
+            href={fileDownloadUrl(최근_생성파일.id)}
+            download={최근_생성파일.파일명}
+          >
+            <Icon name="download" size={14} />
+            {최근_생성파일.파일명}
+          </a>
         )}
 
         {isStreaming && (

@@ -226,7 +226,16 @@ export function exportCsv(행: Record<string, unknown>[], 파일명: string): vo
   URL.revokeObjectURL(url)
 }
 
-type 스트림_done = { text: string; 제안: 제안요약 | null; action_token: string | null }
+export type 생성_파일 = { id: number; 파일명: string; mime타입: string }
+
+export const fileDownloadUrl = (id: number) => `${API_BASE}/api/files/${id}`
+
+type 스트림_done = {
+  text: string
+  제안: 제안요약 | null
+  action_token: string | null
+  생성_파일: 생성_파일 | null
+}
 
 export function streamMessage(
   대화_id: number,

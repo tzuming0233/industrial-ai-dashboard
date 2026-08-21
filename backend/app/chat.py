@@ -306,16 +306,30 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _마무리(대화_id: int, 텍스트: str, 제안: dict | None, 전체_df: pd.DataFrame | None = None):
+def _마무리(
+    대화_id: int, 텍스트: str, 제안: dict | None, 전체_df: pd.DataFrame | None = None,
+    생성된_파일: dict | None = None,
+):
     repo.채팅기록_저장(대화_id, "assistant", 텍스트)
+
+    생성_파일_응답 = None
+    if 생성된_파일:
+        파일_id = repo.생성파일_저장(
+            대화_id, 생성된_파일["파일명"], 생성된_파일["mime타입"], 생성된_파일["내용"],
+        )
+        생성_파일_응답 = {"id": 파일_id, "파일명": 생성된_파일["파일명"], "mime타입": 생성된_파일["mime타입"]}
+
     if not 제안:
-        yield _sse("done", {"text": 텍스트, "제안": None, "action_token": None})
+        yield _sse("done", {"text": 텍스트, "제안": None, "action_token": None, "생성_파일": 생성_파일_응답})
         return
     토큰 = uuid.uuid4().hex
     _대기중_제안[대화_id] = {"제안": 제안, "token": 토큰}
     if 전체_df is None:
         전체_df = repo.사업현황_불러오기()
-    yield _sse("done", {"text": 텍스트, "제안": _제안_요약(제안, 전체_df), "action_token": 토큰})
+    yield _sse(
+        "done",
+        {"text": 텍스트, "제안": _제안_요약(제안, 전체_df), "action_token": 토큰, "생성_파일": 생성_파일_응답},
+    )
 
 
 def _이벤트_전달(이벤트: dict):
@@ -330,7 +344,10 @@ def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
-            yield from _마무리(대화_id, 이벤트["text"], 이벤트.get("pending_action"))
+            yield from _마무리(
+                대화_id, 이벤트["text"], 이벤트.get("pending_action"),
+                생성된_파일=이벤트.get("생성된_파일"),
+            )
 
 
 def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list):
@@ -357,7 +374,10 @@ def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_�
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
-            yield from _마무리(대화_id, 이벤트["text"], 이벤트.get("pending_action"))
+            yield from _마무리(
+                대화_id, 이벤트["text"], 이벤트.get("pending_action"),
+                생성된_파일=이벤트.get("생성된_파일"),
+            )
 
 
 def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 전체_df: pd.DataFrame):
@@ -377,26 +397,29 @@ def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨�
 
     최종_텍스트 = ""
     제안 = None
+    생성된_파일 = None
     for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
             최종_텍스트 = 이벤트["text"]
             제안 = 이벤트.get("pending_action")
+            생성된_파일 = 이벤트.get("생성된_파일")
 
     if 제안 and 제안.get("유형") == "import_uploaded_file_as_data":
         yield _sse("status", {"message": "AI가 사업현황 필드에 맞게 정리하는 중..."})
         매핑결과 = ai_agent.업로드_매핑_추론(list(원본_df.columns), 원본_df.head(5).to_dict("records"))
         if "오류" in 매핑결과:
             최종_텍스트 += f"\n\n(반영 중 오류가 있었습니다: {매핑결과['오류']})"
-            yield from _마무리(대화_id, 최종_텍스트, None)
+            yield from _마무리(대화_id, 최종_텍스트, None, 생성된_파일=생성된_파일)
         else:
             결과_df, 경고_목록 = _LLM_매핑_적용(원본_df, 매핑결과)
             yield from _마무리(
                 대화_id, 최종_텍스트, {"유형": "업로드", "결과_df": 결과_df, "경고": 경고_목록}, 전체_df,
+                생성된_파일=생성된_파일,
             )
     else:
-        yield from _마무리(대화_id, 최종_텍스트, 제안, 전체_df)
+        yield from _마무리(대화_id, 최종_텍스트, 제안, 전체_df, 생성된_파일=생성된_파일)
 
 
 @router.post("/api/conversations/{conversation_id}/messages/stream")

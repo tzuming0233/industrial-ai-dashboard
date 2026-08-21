@@ -6,6 +6,7 @@ DB 스키마/쿼리 로직은 이 파일에서 새로 만들지 않는다.
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -45,6 +46,7 @@ def _시작시_DB_준비():
     repo.연간목표_DB_준비()
     repo.투입인력_DB_준비()
     repo.노트_DB_준비()
+    repo.생성파일_DB_준비()
 
 
 class 로그인_요청(BaseModel):
@@ -166,6 +168,21 @@ def xlsx_내보내기(요청: _내보내기_요청, _인증: None = Depends(_인
         content=데이터,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=export.xlsx"},
+    )
+
+
+@app.get("/api/files/{file_id}")
+def 생성파일_다운로드(file_id: int, _인증: None = Depends(_인증_확인)):
+    파일 = repo.생성파일_불러오기(file_id)
+    if not 파일:
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    # 파일명이 한글일 수 있어 RFC 5987(filename*=UTF-8''...)로 인코딩 — 그냥 filename=만 쓰면
+    # 브라우저/프록시에 따라 비ASCII 문자가 깨질 수 있다.
+    인코딩된_파일명 = quote(파일["파일명"])
+    return Response(
+        content=파일["내용"],
+        media_type=파일["mime타입"] or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{인코딩된_파일명}"},
     )
 
 

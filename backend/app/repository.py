@@ -740,3 +740,50 @@ def 노트_검색(검색어: str | None = None) -> list[dict]:
         return [dict(row) for row in rows]
     finally:
         conn.close()
+
+
+def 생성파일_DB_준비():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 생성파일 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                대화_id INTEGER,
+                파일명 TEXT,
+                mime타입 TEXT,
+                내용 BLOB,
+                생성일시 TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def 생성파일_저장(대화_id: int | None, 파일명: str, mime타입: str, 내용: bytes) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        cur = conn.execute(
+            "INSERT INTO 생성파일 (대화_id, 파일명, mime타입, 내용, 생성일시) VALUES (?, ?, ?, ?, ?)",
+            (대화_id, 파일명, mime타입, 내용, 지금),
+        )
+        conn.commit()
+        새_id = cur.lastrowid
+    finally:
+        conn.close()
+    return 새_id
+
+
+def 생성파일_불러오기(파일_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, 파일명, mime타입, 내용 FROM 생성파일 WHERE id = ?", (int(파일_id),)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()

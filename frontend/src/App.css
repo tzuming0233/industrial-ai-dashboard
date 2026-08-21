@@ -813,6 +813,26 @@
   outline: none;
 }
 
+.generated-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  background: var(--카드-배경);
+  box-shadow: var(--카드-그림자);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--남색-진하게);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.generated-file-chip:hover {
+  background: var(--남색-연하게);
+}
+
 .mic-btn-active {
   background: var(--엠버코랄) !important;
   color: #fff !important;

@@ -127,3 +127,102 @@ def _제안_추가행들(사업목록: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(행들, columns=list(_제안_기본값.keys()))
     df["id"] = pd.NA
     return df[편집_컬럼순서]
+
+
+# ---------- AI 채팅 "파일 생성"(create_file) 도구가 쓰는 포맷 변환 ----------
+# ai_agent.py는 항상 텍스트만 만들어내고, 확장자에 따라 여기서 실제 바이너리로 바꾼다.
+
+_MIME_타입_맵 = {
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "csv": "text/csv",
+    "json": "application/json",
+    "html": "text/html",
+    "md": "text/markdown",
+    "py": "text/x-python",
+    "js": "text/javascript",
+    "ts": "text/typescript",
+    "css": "text/css",
+    "sql": "text/x-sql",
+    "yaml": "text/yaml",
+    "yml": "text/yaml",
+    "txt": "text/plain",
+}
+
+
+def 파일_mime타입(파일명: str) -> str:
+    확장자 = 파일명.rsplit(".", 1)[-1].lower() if "." in 파일명 else ""
+    return _MIME_타입_맵.get(확장자, "application/octet-stream")
+
+
+def _마크다운을_docx로(내용: str) -> bytes:
+    from docx import Document
+
+    문서 = Document()
+    for 줄 in 내용.splitlines():
+        줄 = 줄.rstrip()
+        벗긴_줄 = 줄.lstrip()
+        if not 줄.strip():
+            문서.add_paragraph("")
+        elif 줄.startswith("### "):
+            문서.add_heading(줄[4:].strip(), level=3)
+        elif 줄.startswith("## "):
+            문서.add_heading(줄[3:].strip(), level=2)
+        elif 줄.startswith("# "):
+            문서.add_heading(줄[2:].strip(), level=1)
+        elif 벗긴_줄.startswith(("- ", "* ")):
+            문서.add_paragraph(벗긴_줄[2:].strip(), style="List Bullet")
+        else:
+            문서.add_paragraph(줄)
+    버퍼 = io.BytesIO()
+    문서.save(버퍼)
+    return 버퍼.getvalue()
+
+
+def _마크다운을_pptx로(내용: str) -> bytes:
+    import re
+
+    from pptx import Presentation
+
+    프레젠테이션 = Presentation()
+    레이아웃 = 프레젠테이션.slide_layouts[1]  # 제목 + 본문
+    슬라이드_텍스트들 = re.split(r"(?m)^\s*---\s*$", 내용)
+
+    for 슬라이드_텍스트 in 슬라이드_텍스트들:
+        줄들 = [l.strip() for l in 슬라이드_텍스트.splitlines() if l.strip()]
+        if not 줄들:
+            continue
+        제목 = 줄들[0].lstrip("#").strip()
+        본문_줄들 = [l.lstrip("-* ").strip() for l in 줄들[1:]]
+
+        슬라이드 = 프레젠테이션.slides.add_slide(레이아웃)
+        슬라이드.shapes.title.text = 제목
+        본문_프레임 = 슬라이드.placeholders[1].text_frame
+        본문_프레임.clear()
+        if 본문_줄들:
+            본문_프레임.text = 본문_줄들[0]
+            for 줄 in 본문_줄들[1:]:
+                단락 = 본문_프레임.add_paragraph()
+                단락.text = 줄
+
+    버퍼 = io.BytesIO()
+    프레젠테이션.save(버퍼)
+    return 버퍼.getvalue()
+
+
+def 파일_생성_바이트(파일명: str, 내용: str) -> bytes:
+    """create_file 도구가 만든 텍스트 content를 파일명 확장자에 맞는 바이너리로 바꾼다.
+
+    .xlsx는 content를 CSV로, .docx/.pptx는 마크다운으로 해석한다(정확한 규칙은
+    ai_agent.py의 create_file 도구 설명에 있음). 그 외 확장자는 그대로 UTF-8 텍스트.
+    """
+    확장자 = 파일명.rsplit(".", 1)[-1].lower() if "." in 파일명 else ""
+    if 확장자 == "xlsx":
+        df = pd.read_csv(io.StringIO(내용))
+        return 엑셀로_변환(df)
+    if 확장자 == "docx":
+        return _마크다운을_docx로(내용)
+    if 확장자 == "pptx":
+        return _마크다운을_pptx로(내용)
+    return 내용.encode("utf-8")
