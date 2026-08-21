@@ -16,6 +16,7 @@ export type IconName =
   | 'send'
   | 'network'
   | 'book'
+  | 'mic'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -46,6 +47,12 @@ const paths: Record<IconName, ReactNode> = {
   ),
   book: (
     <path d="M4 5.5A2 2 0 0 1 6 3.5h13a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2M4 5.5A2 2 0 0 0 6 7.5h14M4 5.5v14a2 2 0 0 0 2 2" />
+  ),
+  mic: (
+    <>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6" />
+    </>
   ),
 }
 

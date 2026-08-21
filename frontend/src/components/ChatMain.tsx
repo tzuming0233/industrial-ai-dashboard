@@ -11,6 +11,7 @@ import {
 } from '../api'
 import ProposalCard from './ProposalCard'
 import Icon from './Icon'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 type Props = {
   conversationId: number
@@ -36,6 +37,10 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  const { 지원됨: 음성지원, 듣는중, 토글: 음성_토글 } = useSpeechRecognition((text) => {
+    setInputText((prev) => (prev ? `${prev} ${text}` : text))
+  })
 
   useEffect(() => {
     setLoading(true)
@@ -241,9 +246,20 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
           >
             <Icon name="paperclip" size={16} />
           </button>
+          {음성지원 && (
+            <button
+              type="button"
+              className={`btn btn-secondary attach-btn ${듣는중 ? 'mic-btn-active' : ''}`}
+              onClick={음성_토글}
+              disabled={isStreaming}
+              title={듣는중 ? '음성 입력 중지' : '음성으로 입력'}
+            >
+              <Icon name="mic" size={16} />
+            </button>
+          )}
           <input
             className="text-input chat-text-input"
-            placeholder="질문을 입력하거나 파일을 첨부하세요"
+            placeholder={듣는중 ? '듣고 있어요...' : '질문을 입력하거나 파일을 첨부하세요'}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             disabled={isStreaming}

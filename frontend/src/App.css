@@ -813,6 +813,21 @@
   outline: none;
 }
 
+.mic-btn-active {
+  background: var(--엠버코랄) !important;
+  color: #fff !important;
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(252, 83, 86, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(252, 83, 86, 0);
+  }
+}
+
 .attach-btn,
 .send-btn {
   display: inline-flex;

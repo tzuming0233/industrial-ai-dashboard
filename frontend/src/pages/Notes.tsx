@@ -12,6 +12,7 @@ import {
   type 노트_요약,
 } from '../api'
 import Icon from '../components/Icon'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 export default function Notes() {
   const [목록, set목록] = useState<노트_요약[]>([])
@@ -32,6 +33,10 @@ export default function Notes() {
 
   const [삭제확인, set삭제확인] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const { 지원됨: 음성지원, 듣는중, 토글: 음성_토글 } = useSpeechRecognition((text) => {
+    set내용_입력((prev) => (prev ? `${prev} ${text}` : text))
+  })
 
   async function 목록_새로고침() {
     const data = await getNotes()
@@ -244,6 +249,16 @@ export default function Notes() {
                 <Icon name="sparkles" size={14} />
                 AI로 위키 정리
               </button>
+              {음성지원 && (뷰_모드 === '원본' || !선택된_노트.위키_내용) && (
+                <button
+                  className={`btn btn-secondary ${듣는중 ? 'mic-btn-active' : ''}`}
+                  onClick={음성_토글}
+                  title={듣는중 ? '음성 입력 중지' : '음성으로 입력'}
+                >
+                  <Icon name="mic" size={14} />
+                  {듣는중 ? '듣는 중...' : '음성으로 입력'}
+                </button>
+              )}
             </div>
 
             {정리중 && <p className="typing-indicator">AI가 노트를 정리하는 중...</p>}
