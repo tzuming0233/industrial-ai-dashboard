@@ -14,7 +14,15 @@ import {
 } from './api'
 import Sidebar from './components/Sidebar'
 import ChatMain from './components/ChatMain'
-import TopNav, { type Tab } from './components/TopNav'
+import TopNav, { type Tab, 탭_목록 } from './components/TopNav'
+
+// 새로고침해도 보던 탭 그대로 있도록 로컬에 기억해둔다.
+const _탭_저장키 = 'kpc-selected-tab'
+
+function 저장된_탭_불러오기(): Tab {
+  const 저장값 = localStorage.getItem(_탭_저장키)
+  return (탭_목록 as string[]).includes(저장값 ?? '') ? (저장값 as Tab) : 'AI 채팅'
+}
 
 // plotly.js가 커서(gzip 1MB+) 기본 탭(AI 채팅)에서는 안 실리도록 차트 페이지만 지연 로드한다.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -30,7 +38,11 @@ function App() {
   const [이름_입력, set이름_입력] = useState('')
   const [비밀번호, set비밀번호] = useState('')
   const [로그인에러, set로그인에러] = useState('')
-  const [탭, set탭] = useState<Tab>('AI 채팅')
+  const [탭, set탭] = useState<Tab>(저장된_탭_불러오기)
+
+  useEffect(() => {
+    localStorage.setItem(_탭_저장키, 탭)
+  }, [탭])
 
   const [conversations, setConversations] = useState<대화[]>([])
   const [businesses, setBusinesses] = useState<사업행[]>([])

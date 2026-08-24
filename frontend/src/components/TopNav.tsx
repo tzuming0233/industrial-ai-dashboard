@@ -49,3 +49,4 @@ export default function TopNav({ current, onChange, 사용자_이름, onLogout }
 }
 
 export type { Tab }
+export { 탭_목록 }
