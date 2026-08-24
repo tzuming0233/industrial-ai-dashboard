@@ -14,6 +14,7 @@ import {
 } from './api'
 import Sidebar from './components/Sidebar'
 import ChatMain from './components/ChatMain'
+import Icon from './components/Icon'
 import TopNav, { type Tab, 탭_목록 } from './components/TopNav'
 
 // 새로고침해도 보던 탭 그대로 있도록 로컬에 기억해둔다.
@@ -39,6 +40,9 @@ function App() {
   const [비밀번호, set비밀번호] = useState('')
   const [로그인에러, set로그인에러] = useState('')
   const [탭, set탭] = useState<Tab>(저장된_탭_불러오기)
+  // AI 채팅이 아닌 탭에서 오른쪽에 좁게 뜨는 채팅 패널을 접어둘 수 있게 — 접으면
+  // main-pane이 flex:1이라 자동으로 그 폭만큼 넓어진다(레이아웃 변경 없이 폭만 조정).
+  const [채팅_접힘, set채팅_접힘] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(_탭_저장키, 탭)
@@ -214,16 +218,33 @@ function App() {
         )}
 
         {/* 탭을 옮겨도 스트리밍 중인 응답이 끊기지 않도록 ChatMain은 항상 마운트된 채로
-            유지하고, AI 채팅 탭에서는 넓게·다른 탭에서는 좁은 사이드 패널로만 보여준다. */}
-        <div className={`chat-panel ${AI채팅_탭 ? 'chat-panel-wide' : 'chat-panel-narrow'}`}>
-          <ChatMain
-            key={currentId}
-            conversationId={currentId}
-            onActivity={() => {
-              refreshConversations()
-              set데이터_갱신_신호((v) => v + 1)
-            }}
-          />
+            유지하고, AI 채팅 탭에서는 넓게·다른 탭에서는 좁은 사이드 패널로만 보여준다.
+            그 좁은 패널은 접었다 펼 수 있고, 접으면 옆의 main-pane이 그만큼 넓어진다. */}
+        <div
+          className={`chat-panel ${
+            AI채팅_탭 ? 'chat-panel-wide' : 채팅_접힘 ? 'chat-panel-collapsed' : 'chat-panel-narrow'
+          }`}
+        >
+          {!AI채팅_탭 && (
+            <button
+              type="button"
+              className="chat-panel-toggle"
+              onClick={() => set채팅_접힘((v) => !v)}
+              title={채팅_접힘 ? 'AI 채팅 펼치기' : 'AI 채팅 접기'}
+            >
+              <Icon name="chevron" size={14} />
+            </button>
+          )}
+          <div className={`chat-panel-body ${!AI채팅_탭 && 채팅_접힘 ? 'chat-panel-body-hidden' : ''}`}>
+            <ChatMain
+              key={currentId}
+              conversationId={currentId}
+              onActivity={() => {
+                refreshConversations()
+                set데이터_갱신_신호((v) => v + 1)
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>

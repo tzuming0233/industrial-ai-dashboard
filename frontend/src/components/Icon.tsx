@@ -20,6 +20,7 @@ export type IconName =
   | 'download'
   | 'edit'
   | 'clock'
+  | 'chevron'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -67,6 +68,7 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M12 7.5V12l3 2" />
     </>
   ),
+  chevron: <path d="M9 6l6 6-6 6" />,
 }
 
 export default function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
