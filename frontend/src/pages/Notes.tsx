@@ -369,6 +369,34 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
             ))}
           </div>
         )}
+        <details className="notes-syntax-help">
+          <summary>
+            <Icon name="book" size={13} />
+            문법 안내
+          </summary>
+          <ul>
+            <li>
+              <code>[[노트 제목]]</code> — 다른 노트로 연결되는 위키링크. 저장하면 그래프에 관계가
+              자동으로 생기고, 미리보기에서 클릭하면 바로 그 노트로 이동합니다. 아직 없는 제목을
+              써도 일단 그래프에 팬텀 노드로 생기고, 나중에 같은 제목으로 노트를 만들면 자동 연결됩니다.
+            </li>
+            <li>
+              <code>[[노트 제목|별칭]]</code> — 연결은 "노트 제목"으로 되지만 화면엔 "별칭"으로 보입니다.
+            </li>
+            <li>
+              <code>#태그</code> — 띄어쓰기 없이 붙여 쓰면 자동으로 태그로 인식되어 저장 시 태그
+              목록에 추가됩니다(왼쪽 태그 칩에서 검색 가능).
+            </li>
+            <li>
+              <code># 제목</code>, <code>## 소제목</code>, <code>### 소소제목</code> — <code>#</code>{' '}
+              뒤에 띄어쓰기를 넣으면 태그가 아니라 마크다운 제목으로 인식됩니다.
+            </li>
+            <li>
+              그 밖에 표준 마크다운도 그대로 됩니다: <code>**굵게**</code>, <code>*기울임*</code>,{' '}
+              <code>- 목록</code>, <code>&gt; 인용</code>, <code>`코드`</code>, 표(<code>|칸|칸|</code>).
+            </li>
+          </ul>
+        </details>
         <div className="conv-list">
           {필터된_목록.length === 0 && <p className="sidebar-caption">노트가 없습니다.</p>}
           {필터된_목록.map((n) => (
@@ -500,12 +528,26 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
             )}
 
             {뷰_모드 === '원본' || !선택된_노트.위키_내용 ? (
-              <textarea
-                className="text-input notes-textarea"
-                value={내용_입력}
-                onChange={(e) => set내용_입력(e.target.value)}
-                placeholder="노트 내용을 마크다운으로 작성하세요... [[다른 노트 제목]]을 쓰면 그래프에 자동으로 연결됩니다."
-              />
+              <>
+                <textarea
+                  className="text-input notes-textarea"
+                  value={내용_입력}
+                  onChange={(e) => set내용_입력(e.target.value)}
+                  placeholder="노트 내용을 마크다운으로 작성하세요... [[다른 노트 제목]]을 쓰면 그래프에 자동으로 연결되고, #태그·# 제목도 씁니다. 아래 미리보기에 바로 반영됩니다."
+                />
+                <div className="notes-live-preview">
+                  <p className="sidebar-caption">미리보기 — 타이핑하는 대로 바로 반영됩니다</p>
+                  <div className="notes-wiki-view assistant-text">
+                    {내용_입력.trim() ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_링크_컴포넌트}>
+                        {위키텍스트_전처리(내용_입력)}
+                      </ReactMarkdown>
+                    ) : (
+                      <p className="sidebar-caption">내용을 입력하면 여기 미리보기가 뜹니다.</p>
+                    )}
+                  </div>
+                </div>
+              </>
             ) : (
               <div className="notes-wiki-view assistant-text">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_링크_컴포넌트}>

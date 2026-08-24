@@ -718,6 +718,53 @@
   font-size: 13px;
 }
 
+.assistant-text h1,
+.assistant-text h2,
+.assistant-text h3,
+.assistant-text h4 {
+  margin: 16px 0 8px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.assistant-text h1:first-child,
+.assistant-text h2:first-child,
+.assistant-text h3:first-child,
+.assistant-text h4:first-child {
+  margin-top: 0;
+}
+
+.assistant-text h1 {
+  font-size: 22px;
+  border-bottom: 1px solid var(--테두리색);
+  padding-bottom: 6px;
+}
+
+.assistant-text h2 {
+  font-size: 19px;
+}
+
+.assistant-text h3 {
+  font-size: 16px;
+}
+
+.assistant-text h4 {
+  font-size: 15px;
+  color: var(--보조텍스트색);
+}
+
+.assistant-text blockquote {
+  margin: 0 0 10px;
+  padding: 4px 14px;
+  border-left: 3px solid var(--남색);
+  background: var(--남색-연하게);
+  color: var(--보조텍스트색);
+}
+
+.assistant-text blockquote p {
+  margin: 0;
+}
+
 .typing-indicator {
   color: var(--보조텍스트색);
   font-size: 14px;
@@ -1275,6 +1322,44 @@
   border-radius: 10px;
   padding: 14px 16px;
   max-width: 100%;
+}
+
+.notes-live-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notes-syntax-help {
+  border: 1px solid var(--테두리색);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--보조텍스트색);
+}
+
+.notes-syntax-help summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--본문색);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notes-syntax-help ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notes-syntax-help code {
+  background: var(--배경색);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 
 .notes-organize-preview {
