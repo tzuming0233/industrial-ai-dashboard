@@ -8,12 +8,15 @@ chat.py의 제안(propose) 흐름을 타므로 이 파일과는 별개 경로다
 import numpy as np
 
 import ai_agent
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from backend.app import auth, repository as repo
 
 router = APIRouter(dependencies=[Depends(auth.인증_확인)], prefix="/api/notes")
+
+# 512MB짜리 서버에 큰 BLOB이 SQLite로 쌓이는 걸 막는 보수적인 상한.
+_최대_첨부_바이트 = 8 * 1024 * 1024
 
 
 class _노트_생성_요청(BaseModel):
@@ -51,6 +54,19 @@ def 노트_생성(요청: _노트_생성_요청, 사용자: dict = Depends(auth.
     새_id = repo.노트_생성(요청.제목, 요청.내용, 요청.태그, 작성자=사용자["이름"])
     _노트_재임베딩(새_id, 요청.제목, 요청.내용)
     return {"id": 새_id}
+
+
+@router.post("/attachments")
+async def 첨부파일_업로드(file: UploadFile = File(...)):
+    # /{note_id}보다 먼저 등록해야 한다 — 안 그러면 "attachments"가 note_id 자리로
+    # 잘못 매칭된다(FastAPI는 등록 순서대로 경로를 매칭한다).
+    내용 = await file.read()
+    if len(내용) > _최대_첨부_바이트:
+        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(8MB 이하만 가능).")
+    파일명 = file.filename or "첨부파일"
+    mime타입 = file.content_type or "application/octet-stream"
+    새_id = repo.생성파일_저장(None, 파일명, mime타입, 내용)
+    return {"id": 새_id, "파일명": 파일명, "mime타입": mime타입}
 
 
 @router.get("/{note_id}")

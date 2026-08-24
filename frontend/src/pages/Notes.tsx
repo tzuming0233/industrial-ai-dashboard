@@ -1,9 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   createNote,
   deleteNote,
+  fileDownloadUrl,
   getNote,
   getNotes,
   getNoteVersions,
@@ -12,6 +22,7 @@ import {
   organizeNote,
   restoreNoteVersion,
   updateNote,
+  uploadNoteAttachment,
   type 노트,
   type 노트_버전행,
   type 노트_요약,
@@ -67,21 +78,40 @@ function 하이라이트_HTML(text: string): string {
     .join('\n')
 }
 
+export type 강조_에디터_핸들 = {
+  // 선택 영역을 marker로 감싼다(굵게/기울임/취소선/인라인코드) — 선택이 없으면
+  // 마커 쌍만 넣고 커서를 그 사이에 둔다.
+  감싸기: (marker: string) => void
+  // 현재 줄 맨 앞에 접두어를 넣는다(제목/목록/인용).
+  줄앞에_삽입: (prefix: string) => void
+  // 커서 위치에 텍스트를 끼워 넣는다(표 템플릿, 구분선, 이미지 링크).
+  커서에_삽입: (text: string) => void
+  // 그 글자 위치로 커서를 옮긴다(목차 클릭 시 해당 제목 줄로 이동).
+  줄로_이동: (charOffset: number) => void
+}
+
+const _목록_줄_패턴 = {
+  체크: /^(\s*)-\s\[[ xX]\]\s(.*)$/,
+  번호: /^(\s*)(\d+)\.\s(.*)$/,
+  글머리: /^(\s*)([-*+])\s(.*)$/,
+}
+
 // 진짜 <textarea>는 그대로 두고(한글 조합 입력이 브라우저 기본 처리를 그대로 타서
 // 안전함) 글자를 투명하게 만든 뒤, 뒤에 색칠된 사본을 겹쳐서 타이핑하는 자리에서
 // 바로 [[링크]]/#태그/#제목이 눈에 띄게 만든다 — 커서·IME는 전부 textarea가
 // 실제로 처리하고, 뒤 레이어는 순수 시각 효과라 입력 동작에 관여하지 않는다.
-function 강조_에디터({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-}) {
+const 강조_에디터 = forwardRef<
+  강조_에디터_핸들,
+  {
+    value: string
+    onChange: (v: string) => void
+    placeholder?: string
+    onDropFile?: (file: File) => void
+  }
+>(function 강조_에디터({ value, onChange, placeholder, onDropFile }, ref) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
+  const [드래그중, set드래그중] = useState(false)
 
   function 스크롤_동기화() {
     if (textareaRef.current && backdropRef.current) {
@@ -90,8 +120,117 @@ function 강조_에디터({
     }
   }
 
+  function 커서_설정(start: number, end: number) {
+    // value가 반영된 다음 프레임에 맞춰야 커서가 어긋나지 않는다(state 업데이트가
+    // 실제 DOM value로 반영되기 전에 setSelectionRange를 하면 옛 길이 기준으로 계산됨).
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(start, end)
+    })
+  }
+
+  function 감싸기(marker: string) {
+    const el = textareaRef.current
+    if (!el) return
+    const s = el.selectionStart
+    const e = el.selectionEnd
+    onChange(value.slice(0, s) + marker + value.slice(s, e) + marker + value.slice(e))
+    커서_설정(s + marker.length, e + marker.length)
+  }
+
+  function 줄앞에_삽입(prefix: string) {
+    const el = textareaRef.current
+    if (!el) return
+    const s = el.selectionStart
+    const 줄시작 = value.lastIndexOf('\n', s - 1) + 1
+    onChange(value.slice(0, 줄시작) + prefix + value.slice(줄시작))
+    커서_설정(s + prefix.length, s + prefix.length)
+  }
+
+  function 커서에_삽입(text: string) {
+    const el = textareaRef.current
+    if (!el) return
+    const s = el.selectionStart
+    const e = el.selectionEnd
+    onChange(value.slice(0, s) + text + value.slice(e))
+    커서_설정(s + text.length, s + text.length)
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({ 감싸기, 줄앞에_삽입, 커서에_삽입, 줄로_이동: (offset: number) => 커서_설정(offset, offset) }),
+    [value],
+  )
+
+  function 키다운(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.nativeEvent.isComposing) return // 한글 자모 조합 중엔 아무 것도 가로채지 않는다.
+    const mod = e.ctrlKey || e.metaKey
+    if (mod && e.key.toLowerCase() === 'b') {
+      e.preventDefault()
+      감싸기('**')
+      return
+    }
+    if (mod && e.key.toLowerCase() === 'i') {
+      e.preventDefault()
+      감싸기('*')
+      return
+    }
+    if (e.key !== 'Enter') return
+
+    const el = e.currentTarget
+    const s = el.selectionStart
+    if (s !== el.selectionEnd) return // 선택 영역이 있으면 기본 동작에 맡긴다.
+    const 줄시작 = value.lastIndexOf('\n', s - 1) + 1
+    const 현재줄 = value.slice(줄시작, s)
+
+    let 다음접두어: string | null = null
+    let 내용있음 = false
+    const 체크 = _목록_줄_패턴.체크.exec(현재줄)
+    const 번호 = _목록_줄_패턴.번호.exec(현재줄)
+    const 글머리 = _목록_줄_패턴.글머리.exec(현재줄)
+    if (체크) {
+      다음접두어 = `${체크[1]}- [ ] `
+      내용있음 = 체크[2].trim() !== ''
+    } else if (번호) {
+      다음접두어 = `${번호[1]}${Number(번호[2]) + 1}. `
+      내용있음 = 번호[3].trim() !== ''
+    } else if (글머리) {
+      다음접두어 = `${글머리[1]}${글머리[2]} `
+      내용있음 = 글머리[3].trim() !== ''
+    }
+    if (다음접두어 === null) return
+
+    e.preventDefault()
+    if (!내용있음) {
+      // 빈 목록 항목에서 Enter — 접두어를 지우고 목록을 빠져나간다.
+      onChange(value.slice(0, 줄시작) + value.slice(s))
+      커서_설정(줄시작, 줄시작)
+    } else {
+      const 새커서 = s + 1 + 다음접두어.length
+      onChange(value.slice(0, s) + '\n' + 다음접두어 + value.slice(s))
+      커서_설정(새커서, 새커서)
+    }
+  }
+
   return (
-    <div className="notes-highlight-editor">
+    <div
+      className={`notes-highlight-editor ${드래그중 ? 'notes-highlight-editor-dragover' : ''}`}
+      onDragOver={(e) => {
+        if (!onDropFile) return
+        e.preventDefault()
+        set드래그중(true)
+      }}
+      onDragLeave={() => set드래그중(false)}
+      onDrop={(e) => {
+        if (!onDropFile) return
+        e.preventDefault()
+        set드래그중(false)
+        const file = e.dataTransfer.files?.[0]
+        if (file) onDropFile(file)
+      }}
+    >
       <div
         ref={backdropRef}
         className="notes-highlight-layer notes-highlight-backdrop"
@@ -106,12 +245,13 @@ function 강조_에디터({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onScroll={스크롤_동기화}
+        onKeyDown={키다운}
         placeholder={placeholder}
         spellCheck={false}
       />
     </div>
   )
-}
+})
 
 export default function Notes({ 데이터_갱신_신호 }: Props) {
   const [보기_모드, set보기_모드] = useState<'노트' | '그래프'>('노트')
@@ -141,6 +281,10 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
 
   const [온톨로지_노드_목록, set온톨로지_노드_목록] = useState<온톨로지_노드[]>([])
   const [온톨로지_관계_목록, set온톨로지_관계_목록] = useState<온톨로지_관계[]>([])
+
+  const [첨부중, set첨부중] = useState(false)
+  const 에디터ref = useRef<강조_에디터_핸들>(null)
+  const 파일input_ref = useRef<HTMLInputElement>(null)
 
   const { 지원됨: 음성지원, 듣는중, 토글: 음성_토글 } = useSpeechRecognition((text) => {
     set내용_입력((prev) => (prev ? `${prev} ${text}` : text))
@@ -251,6 +395,20 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
     )
   }, [목록, 검색어])
 
+  // 위키피디아 문서 상단 목차처럼, 지금 쓰고 있는 원본에서 제목 줄만 뽑아 클릭하면
+  // 그 줄로 커서가 이동하게 만든다(렌더링된 문서에 앵커를 붙이는 방식이 아니라
+  // 편집 중인 textarea 안에서 이동 — 새 의존성 없이 되는 방식).
+  const 목차 = useMemo(() => {
+    const 결과: { 단계: number; 텍스트: string; 오프셋: number }[] = []
+    let 오프셋 = 0
+    for (const 줄 of 내용_입력.split('\n')) {
+      const m = /^(#{1,6})\s+(.*)$/.exec(줄)
+      if (m) 결과.push({ 단계: m[1].length, 텍스트: m[2].trim(), 오프셋 })
+      오프셋 += 줄.length + 1
+    }
+    return 결과
+  }, [내용_입력])
+
   function 위키링크_클릭(제목: string) {
     const 대상 = 목록.find((n) => n.제목 === 제목)
     if (대상) set선택id(대상.id)
@@ -294,6 +452,56 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
         </a>
       )
     },
+    // 프론트(app.*)와 백엔드(api.*)가 서로 다른 서브도메인이라, 이 옵션이 없으면
+    // 브라우저가 <img> 요청에 로그인 쿠키를 안 실어 보내 인증 필요한 파일이
+    // 깨진 이미지로 뜬다 — fetch()가 쓰는 credentials:'include'의 <img> 버전.
+    img: ({ src, alt }: { src?: string; alt?: string }) => (
+      // eslint-disable-next-line jsx-a11y/alt-text
+      <img src={src} alt={alt ?? ''} crossOrigin="use-credentials" style={{ maxWidth: '100%' }} />
+    ),
+  }
+
+  // 노션의 할 일 목록처럼, 원본 미리보기에서 체크박스를 클릭하면 그 줄의 [ ]/[x]가
+  // 실제로 토글된다(react-markdown이 넘겨주는 mdast node의 줄 번호로 원본 텍스트
+  // 몇 번째 줄인지 찾는다). AI가 정리한 "위키" 요약 뷰는 원본과 다른 텍스트라 건드리지 않음.
+  function 체크리스트_토글(줄번호: number | undefined) {
+    if (!줄번호) return
+    const 줄들 = 내용_입력.split('\n')
+    const idx = 줄번호 - 1
+    if (idx < 0 || idx >= 줄들.length) return
+    줄들[idx] = 줄들[idx].replace(/\[([ xX])\]/, (_m, c: string) => (c === ' ' ? '[x]' : '[ ]'))
+    set내용_입력(줄들.join('\n'))
+  }
+
+  const 원본_미리보기_컴포넌트 = {
+    ...마크다운_링크_컴포넌트,
+    input: (props: ComponentProps<'input'> & { node?: { position?: { start?: { line?: number } } } }) => {
+      const { node, checked, type, ...rest } = props
+      if (type !== 'checkbox') return <input {...rest} type={type} />
+      return (
+        <input
+          {...rest}
+          type="checkbox"
+          checked={Boolean(checked)}
+          onChange={() => 체크리스트_토글(node?.position?.start?.line)}
+        />
+      )
+    },
+  }
+
+  async function 파일_첨부_처리(file: File) {
+    setError(null)
+    set첨부중(true)
+    try {
+      const 결과 = await uploadNoteAttachment(file)
+      const url = fileDownloadUrl(결과.id)
+      const 마크다운 = 결과.mime타입.startsWith('image/') ? `![${결과.파일명}](${url})` : `[${결과.파일명}](${url})`
+      에디터ref.current?.커서에_삽입(마크다운)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      set첨부중(false)
+    }
   }
 
   async function 새_노트() {
@@ -599,16 +807,86 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
 
             {뷰_모드 === '원본' || !선택된_노트.위키_내용 ? (
               <>
+                {목차.length > 0 && (
+                  <details className="notes-syntax-help">
+                    <summary>목차 ({목차.length})</summary>
+                    <ul className="notes-toc-list">
+                      {목차.map((항목, i) => (
+                        <li key={i} style={{ marginLeft: (항목.단계 - 1) * 12 }}>
+                          <button
+                            type="button"
+                            className="notes-toc-item"
+                            onClick={() => 에디터ref.current?.줄로_이동(항목.오프셋)}
+                          >
+                            {항목.텍스트 || '(제목 없음)'}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+
+                <div className="notes-format-toolbar">
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="굵게 (Ctrl+B)" onClick={() => 에디터ref.current?.감싸기('**')}>
+                    <b>B</b>
+                  </button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="기울임 (Ctrl+I)" onClick={() => 에디터ref.current?.감싸기('*')}>
+                    <i>I</i>
+                  </button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="취소선" onClick={() => 에디터ref.current?.감싸기('~~')}>
+                    <s>S</s>
+                  </button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="제목 1" onClick={() => 에디터ref.current?.줄앞에_삽입('# ')}>H1</button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="제목 2" onClick={() => 에디터ref.current?.줄앞에_삽입('## ')}>H2</button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="제목 3" onClick={() => 에디터ref.current?.줄앞에_삽입('### ')}>H3</button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="글머리 목록" onClick={() => 에디터ref.current?.줄앞에_삽입('- ')}>•</button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="번호 목록" onClick={() => 에디터ref.current?.줄앞에_삽입('1. ')}>1.</button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="체크리스트" onClick={() => 에디터ref.current?.줄앞에_삽입('- [ ] ')}>할일</button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="인용" onClick={() => 에디터ref.current?.줄앞에_삽입('> ')}>"</button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="코드" onClick={() => 에디터ref.current?.감싸기('`')}>{'`'}</button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary notes-format-btn"
+                    title="표 삽입"
+                    onClick={() => 에디터ref.current?.커서에_삽입('\n| 제목1 | 제목2 |\n| --- | --- |\n| 내용1 | 내용2 |\n')}
+                  >
+                    표
+                  </button>
+                  <button type="button" className="btn btn-secondary notes-format-btn" title="구분선" onClick={() => 에디터ref.current?.커서에_삽입('\n---\n')}>―</button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary notes-format-btn"
+                    title="이미지/파일 첨부"
+                    disabled={첨부중}
+                    onClick={() => 파일input_ref.current?.click()}
+                  >
+                    <Icon name="paperclip" size={13} />
+                  </button>
+                  <input
+                    ref={파일input_ref}
+                    type="file"
+                    className="notes-hidden-file-input"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) 파일_첨부_처리(file)
+                      e.target.value = ''
+                    }}
+                  />
+                </div>
+                {첨부중 && <p className="typing-indicator">파일 업로드하는 중...</p>}
+
                 <강조_에디터
+                  ref={에디터ref}
                   value={내용_입력}
                   onChange={set내용_입력}
-                  placeholder="노트 내용을 마크다운으로 작성하세요... [[다른 노트 제목]]을 쓰면 그래프에 자동으로 연결되고, #태그·# 제목도 씁니다. 타이핑한 자리에 바로 색이 입혀집니다."
+                  onDropFile={파일_첨부_처리}
+                  placeholder="노트 내용을 마크다운으로 작성하세요... [[다른 노트 제목]]을 쓰면 그래프에 자동으로 연결되고, #태그·# 제목도 씁니다. 타이핑한 자리에 바로 색이 입혀지고, 이미지를 드래그해서 넣을 수도 있습니다."
                 />
                 <div className="notes-live-preview">
                   <p className="sidebar-caption">미리보기 — 타이핑하는 대로 바로 반영됩니다</p>
                   <div className="notes-wiki-view assistant-text">
                     {내용_입력.trim() ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_링크_컴포넌트}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={원본_미리보기_컴포넌트}>
                         {위키텍스트_전처리(내용_입력)}
                       </ReactMarkdown>
                     ) : (

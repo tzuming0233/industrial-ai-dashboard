@@ -220,7 +220,10 @@ def xlsx_내보내기(요청: _내보내기_요청, _인증: None = Depends(_인
     )
 
 
-_미리보기_가능_mime타입 = {"text/html", "image/svg+xml"}
+_미리보기_가능_mime타입 = {
+    "text/html", "image/svg+xml",
+    "image/png", "image/jpeg", "image/gif", "image/webp",
+}
 
 
 @app.get("/api/files/{file_id}")

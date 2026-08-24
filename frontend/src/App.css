@@ -1363,6 +1363,48 @@
   color: var(--남색-진하게);
 }
 
+.notes-highlight-editor-dragover {
+  outline: 2px dashed var(--남색);
+  outline-offset: -2px;
+}
+
+.notes-format-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.notes-format-btn {
+  min-width: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.notes-hidden-file-input {
+  display: none;
+}
+
+.notes-toc-list {
+  margin: 8px 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.notes-toc-item {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--남색-진하게);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
 .notes-toolbar {
   display: flex;
   gap: 8px;

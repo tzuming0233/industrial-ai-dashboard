@@ -306,6 +306,18 @@ export type 생성_파일 = { id: number; 파일명: string; mime타입: string 
 
 export const fileDownloadUrl = (id: number) => `${API_BASE}/api/files/${id}`
 
+export async function uploadNoteAttachment(file: File): Promise<생성_파일> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${API_BASE}/api/notes/attachments`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
 type 스트림_done = {
   text: string
   제안: 제안요약 | null
