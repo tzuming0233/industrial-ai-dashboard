@@ -43,6 +43,76 @@ function 위키텍스트_전처리(md: string): string {
   })
 }
 
+function HTML_이스케이프(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// 원본 문자열 길이·줄바꿈을 한 글자도 안 건드리고 [[..]]/#태그/#제목 구간에만
+// <span>을 씌운다 — 그래야 뒤에 나오는 투명 textarea의 실제 글자 위치와 한 글자도
+// 안 어긋난다(글자를 지우거나 축약하면 그 뒤로 커서·글자가 전부 밀려버린다).
+function 인라인_강조(줄: string): string {
+  return 줄.replace(위키_렌더_패턴, (match) => `<span class="hl-token">${match}</span>`)
+}
+
+function 하이라이트_HTML(text: string): string {
+  return text
+    .split('\n')
+    .map((rawLine) => {
+      const 줄 = HTML_이스케이프(rawLine)
+      if (/^#{1,6}\s/.test(줄)) {
+        return `<span class="hl-heading">${인라인_강조(줄)}</span>`
+      }
+      return 인라인_강조(줄)
+    })
+    .join('\n')
+}
+
+// 진짜 <textarea>는 그대로 두고(한글 조합 입력이 브라우저 기본 처리를 그대로 타서
+// 안전함) 글자를 투명하게 만든 뒤, 뒤에 색칠된 사본을 겹쳐서 타이핑하는 자리에서
+// 바로 [[링크]]/#태그/#제목이 눈에 띄게 만든다 — 커서·IME는 전부 textarea가
+// 실제로 처리하고, 뒤 레이어는 순수 시각 효과라 입력 동작에 관여하지 않는다.
+function 강조_에디터({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const backdropRef = useRef<HTMLDivElement>(null)
+
+  function 스크롤_동기화() {
+    if (textareaRef.current && backdropRef.current) {
+      backdropRef.current.scrollTop = textareaRef.current.scrollTop
+      backdropRef.current.scrollLeft = textareaRef.current.scrollLeft
+    }
+  }
+
+  return (
+    <div className="notes-highlight-editor">
+      <div
+        ref={backdropRef}
+        className="notes-highlight-layer notes-highlight-backdrop"
+        aria-hidden="true"
+        // 사용자가 입력한 텍스트를 그대로 옮겨 색만 입히는 용도라 XSS 위험이 없다
+        // (HTML_이스케이프로 <, >, & 를 먼저 escape한 뒤에만 <span>을 끼워 넣는다).
+        dangerouslySetInnerHTML={{ __html: 하이라이트_HTML(value) + (value.endsWith('\n') ? '​' : '') }}
+      />
+      <textarea
+        ref={textareaRef}
+        className="notes-highlight-layer notes-highlight-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onScroll={스크롤_동기화}
+        placeholder={placeholder}
+        spellCheck={false}
+      />
+    </div>
+  )
+}
+
 export default function Notes({ 데이터_갱신_신호 }: Props) {
   const [보기_모드, set보기_모드] = useState<'노트' | '그래프'>('노트')
   const [목록, set목록] = useState<노트_요약[]>([])
@@ -529,11 +599,10 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
 
             {뷰_모드 === '원본' || !선택된_노트.위키_내용 ? (
               <>
-                <textarea
-                  className="text-input notes-textarea"
+                <강조_에디터
                   value={내용_입력}
-                  onChange={(e) => set내용_입력(e.target.value)}
-                  placeholder="노트 내용을 마크다운으로 작성하세요... [[다른 노트 제목]]을 쓰면 그래프에 자동으로 연결되고, #태그·# 제목도 씁니다. 아래 미리보기에 바로 반영됩니다."
+                  onChange={set내용_입력}
+                  placeholder="노트 내용을 마크다운으로 작성하세요... [[다른 노트 제목]]을 쓰면 그래프에 자동으로 연결되고, #태그·# 제목도 씁니다. 타이핑한 자리에 바로 색이 입혀집니다."
                 />
                 <div className="notes-live-preview">
                   <p className="sidebar-caption">미리보기 — 타이핑하는 대로 바로 반영됩니다</p>

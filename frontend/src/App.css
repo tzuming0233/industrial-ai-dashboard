@@ -1298,12 +1298,69 @@
   padding: 8px 10px;
 }
 
-.notes-textarea {
+.notes-highlight-editor {
+  position: relative;
   flex: 1;
   min-height: 320px;
   resize: vertical;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+/* 겹쳐지는 두 레이어(색칠된 사본 / 실제 입력용 투명 textarea)가 글자 하나까지
+   똑같은 자리에 놓이도록 폰트·여백·테두리를 반드시 이 규칙 하나로 공유한다 —
+   textarea 쪽에만 .text-input의 padding/border가 붙고 배경 사본엔 안 붙으면
+   그 순간부터 두 레이어가 어긋난다. */
+.notes-highlight-layer {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   font-family: 'Segoe UI', 'Malgun Gothic', 'Pretendard', system-ui, sans-serif;
+  font-size: 14px;
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.notes-highlight-backdrop {
+  color: var(--본문색);
+  background: var(--카드-배경);
+  border-color: var(--테두리색);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.notes-highlight-input {
+  background: transparent;
+  border-color: var(--테두리색);
+  color: transparent;
+  caret-color: var(--본문색);
+  resize: none;
+  overflow: auto;
+}
+
+.notes-highlight-input:focus {
+  outline: 2px solid var(--남색);
+  outline-offset: -1px;
+}
+
+.notes-highlight-input::placeholder {
+  color: var(--보조텍스트색);
+}
+
+.hl-token {
+  background: var(--남색-연하게);
+  color: var(--남색-진하게);
+  border-radius: 3px;
+}
+
+.hl-heading {
+  font-weight: 700;
+  color: var(--남색-진하게);
 }
 
 .notes-toolbar {
