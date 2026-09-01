@@ -15,7 +15,22 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <p className="page-loading">불러오는 중...</p>
+  if (loading) {
+    return (
+      <div className="page">
+        <div className="metric-row">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton skeleton-card" />)}
+        </div>
+        <div className="metric-row">
+          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="skeleton skeleton-card" />)}
+        </div>
+        <div className="chart-row">
+          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton skeleton-chart" />)}
+        </div>
+        <div className="skeleton skeleton-chart" />
+      </div>
+    )
+  }
   if (!data) return <p className="page-loading">데이터를 불러오지 못했습니다.</p>
 
   const 구분_목록 = [...new Set(data.구분별_건수.map((d) => String(d.구분)))]
@@ -37,7 +52,7 @@ export default function Dashboard() {
                   <th>업체명</th>
                   <th>용역명</th>
                   <th>종료일</th>
-                  <th>D-day</th>
+                  <th className="num">D-day</th>
                   <th>사업단계</th>
                 </tr>
               </thead>
@@ -47,7 +62,7 @@ export default function Dashboard() {
                     <td>{row.업체명}</td>
                     <td>{row.용역명}</td>
                     <td>{row.종료일}</td>
-                    <td>{row['D-day']}</td>
+                    <td className="num">{row['D-day']}</td>
                     <td>
                       <StatusBadge value={row.사업단계} />
                     </td>
@@ -60,23 +75,24 @@ export default function Dashboard() {
       )}
 
       <div className="metric-row">
-        <MetricCard label="전체 건수" value={String(data.전체_건수)} />
-        <MetricCard label="사업구분 수" value={String(data.사업구분_수)} />
-        <MetricCard label="구분(신규/이월) 수" value={String(data.구분_수)} />
-        <MetricCard label="평균 진행률" value={`${data.평균_진행률.toFixed(0)}%`} />
+        <MetricCard label="전체 건수" value={String(data.전체_건수)} icon="folder" />
+        <MetricCard label="사업구분 수" value={String(data.사업구분_수)} icon="network" />
+        <MetricCard label="구분(신규/이월) 수" value={String(data.구분_수)} icon="clock" />
+        <MetricCard label="평균 진행률" value={`${data.평균_진행률.toFixed(0)}%`} icon="chart" />
       </div>
 
       <div className="metric-row">
         <MetricCard
           label={`${data.올해_목표.연도}년 매출 달성률`}
           value={data.올해_목표.매출_달성률 !== null ? `${data.올해_목표.매출_달성률.toFixed(1)}%` : '목표 미설정'}
+          icon="chart"
           help={
             data.올해_목표.목표매출
               ? `실적 ${data.올해_목표.실적_매출.toLocaleString()}원 / 목표 ${data.올해_목표.목표매출.toLocaleString()}원`
               : undefined
           }
         />
-        <MetricCard label={`${data.올해_목표.연도}년 손익 달성률`} value="데이터 없음" help="원가/비용 데이터가 아직 없어 계산할 수 없습니다." />
+        <MetricCard label={`${data.올해_목표.연도}년 손익 달성률`} value="데이터 없음" icon="chart" help="원가/비용 데이터가 아직 없어 계산할 수 없습니다." />
       </div>
 
       <div className="chart-row">

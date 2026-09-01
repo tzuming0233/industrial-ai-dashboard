@@ -107,7 +107,19 @@ export default function Milestone() {
     return 목록
   }, [범위])
 
-  if (loading) return <p className="page-loading">불러오는 중...</p>
+  if (loading) {
+    return (
+      <div className="page">
+        <div className="metric-row">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton skeleton-card" />)}
+        </div>
+        <div className="skeleton skeleton-chart" style={{ height: 260 }} />
+        <div className="skeleton-row" style={{ marginTop: 4 }}>
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton skeleton-line" />)}
+        </div>
+      </div>
+    )
+  }
 
   if (마일스톤_목록.length === 0 || !범위) {
     return (
@@ -242,9 +254,9 @@ export default function Milestone() {
               <th>표시명</th>
               <th>담당자</th>
               <th>사업단계</th>
-              <th>진행률</th>
+              <th className="num">진행률</th>
               <th>종료일</th>
-              <th>D-day</th>
+              <th className="num">D-day</th>
             </tr>
           </thead>
           <tbody>
@@ -259,9 +271,9 @@ export default function Milestone() {
                     <td>
                       <StatusBadge value={r.사업단계} />
                     </td>
-                    <td>{r.진행률_숫자.toFixed(0)}%</td>
+                    <td className="num">{r.진행률_숫자.toFixed(0)}%</td>
                     <td>{r.종료일}</td>
-                    <td>{r.dday}</td>
+                    <td className="num">{r.dday}</td>
                   </tr>
                 )
               })}

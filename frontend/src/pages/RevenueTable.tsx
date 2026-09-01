@@ -58,7 +58,20 @@ export default function RevenueTable() {
       .sort((a, b) => a.기수입금액 - b.기수입금액)
   }, [표시_행])
 
-  if (loading) return <p className="page-loading">불러오는 중...</p>
+  if (loading) {
+    return (
+      <div className="page">
+        <div className="skeleton skeleton-line" style={{ height: 36, maxWidth: 420 }} />
+        <div className="metric-row metric-row-5">
+          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton skeleton-card" />)}
+        </div>
+        <div className="skeleton skeleton-chart" />
+        <div className="skeleton-row" style={{ marginTop: 4 }}>
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton skeleton-line" />)}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="page">
@@ -135,14 +148,14 @@ export default function RevenueTable() {
               <th>사업구분</th>
               <th>담당자</th>
               <th>사업단계</th>
-              <th>진행률</th>
+              <th className="num">진행률</th>
               <th>시작일</th>
               <th>종료일</th>
-              <th>계약금액</th>
-              <th>기수입금액</th>
-              <th>당해년도수입금액</th>
-              <th>미수금</th>
-              <th>수금률</th>
+              <th className="num">계약금액</th>
+              <th className="num">기수입금액</th>
+              <th className="num">당해년도수입금액</th>
+              <th className="num">미수금</th>
+              <th className="num">수금률</th>
             </tr>
           </thead>
           <tbody>
@@ -156,14 +169,14 @@ export default function RevenueTable() {
                 <td>
                   <StatusBadge value={r.사업단계} />
                 </td>
-                <td>{r.진행률}%</td>
+                <td className="num">{r.진행률}%</td>
                 <td>{r.시작일}</td>
                 <td>{r.종료일}</td>
-                <td>{(r.계약금액 ?? 0).toLocaleString()}</td>
-                <td>{(r.기수입금액 ?? 0).toLocaleString()}</td>
-                <td>{(r.당해년도수입금액 ?? 0).toLocaleString()}</td>
-                <td>{r.미수금.toLocaleString()}</td>
-                <td>{r.수금률.toFixed(0)}%</td>
+                <td className="num">{(r.계약금액 ?? 0).toLocaleString()}</td>
+                <td className="num">{(r.기수입금액 ?? 0).toLocaleString()}</td>
+                <td className="num">{(r.당해년도수입금액 ?? 0).toLocaleString()}</td>
+                <td className="num">{r.미수금.toLocaleString()}</td>
+                <td className="num">{r.수금률.toFixed(0)}%</td>
               </tr>
             ))}
           </tbody>

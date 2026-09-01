@@ -146,7 +146,15 @@ export default function DataManagement({ 데이터_갱신_신호 }: Props) {
     if (선택된_사업id !== null) setStaffing(await getStaffing(선택된_사업id))
   }
 
-  if (loading) return <p className="page-loading">불러오는 중...</p>
+  if (loading) {
+    return (
+      <div className="page">
+        <div className="skeleton-row">
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton skeleton-line" />)}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="page">

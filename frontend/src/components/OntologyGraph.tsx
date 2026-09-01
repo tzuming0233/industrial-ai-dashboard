@@ -64,9 +64,9 @@ export default function OntologyGraph({
       {
         height: `${height}px`,
         interaction: { hover: true, navigationButtons: !compact, keyboard: !compact, zoomView: !compact },
-        nodes: { font: { size: 16, face: 'Malgun Gothic, Pretendard, sans-serif', color: 본문색 } },
+        nodes: { font: { size: 16, face: 'Pretendard, Malgun Gothic, sans-serif', color: 본문색 } },
         edges: {
-          font: { size: 12, align: 'top', face: 'Malgun Gothic, Pretendard, sans-serif', color: 본문색 },
+          font: { size: 12, align: 'top', face: 'Pretendard, Malgun Gothic, sans-serif', color: 본문색 },
           smooth: { enabled: true, type: 'continuous', roundness: 0.5 },
         },
         physics: {

@@ -11,6 +11,12 @@
   --카드-배경: #ffffff;
   --엠버코랄: #fc5356;
   --카드-그림자: 0 1px 2px rgba(20, 20, 30, 0.05), 0 4px 14px rgba(20, 20, 30, 0.05);
+  /* hover·강조 시 카드를 살짝 띄우는 두 번째 elevation 단계 — 지금까진 그림자가
+     하나뿐이라 정적/hover 상태를 구분할 방법이 없었다. */
+  --그림자-raised: 0 2px 4px rgba(20, 20, 30, 0.08), 0 10px 24px rgba(20, 20, 30, 0.1);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,6 +28,7 @@
     --카드-배경: #202126;
     --남색-연하게: #16324d;
     --카드-그림자: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.2);
+    --그림자-raised: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 28px rgba(0, 0, 0, 0.3);
   }
 }
 
@@ -36,7 +43,10 @@
   width: 100%;
   color: var(--본문색);
   background: var(--배경색);
-  font-family: 'Söhne', 'Segoe UI', 'Malgun Gothic', 'Pretendard', system-ui, sans-serif;
+  /* Pretendard를 index.html에서 실제로 로드하므로 맨 앞에 둔다 — 그 전엔 이 폰트가
+     한 번도 안 실려서(뒤에 있던 시스템 폰트 Segoe UI/맑은 고딕이 먼저 매칭돼) 늘
+     시스템 기본 글꼴로만 보였다. */
+  font-family: 'Pretendard', 'Segoe UI', 'Malgun Gothic', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -248,10 +258,31 @@
 }
 
 .metric-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   background: var(--카드-배경);
   box-shadow: var(--카드-그림자);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 14px 16px;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.metric-card:hover {
+  box-shadow: var(--그림자-raised);
+  transform: translateY(-1px);
+}
+
+.metric-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--남색-연하게);
+  color: var(--남색-진하게);
 }
 
 .metric-label {
@@ -275,9 +306,14 @@
 .chart-box {
   background: var(--카드-배경);
   box-shadow: var(--카드-그림자);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 8px;
   height: 320px;
+  transition: box-shadow 0.15s ease;
+}
+
+.chart-box:hover {
+  box-shadow: var(--그림자-raised);
 }
 
 .chart-box-full {
@@ -320,13 +356,30 @@
 }
 
 .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--배경색);
   color: var(--보조텍스트색);
   font-weight: 600;
   font-size: 12px;
+  /* 헤더행에 무게감을 줘서 본문과 구분되게 — 얇은 border-bottom 하나뿐이던 것을
+     조금 더 진하게. */
+  border-bottom: 2px solid var(--테두리색);
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--배경색) 45%, transparent);
 }
 
 .data-table tbody tr:hover {
   background: var(--배경색);
+}
+
+/* 숫자 컬럼용 — 금액·진행률·건수처럼 자릿수를 맞춰 훑어봐야 하는 값에 붙인다. */
+.data-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 데이터 관리(편집 가능한 표) ---------- */
@@ -356,6 +409,11 @@
   width: 140px;
 }
 
+.editable-table input:focus,
+.editable-table select:focus {
+  background: var(--남색-연하게);
+}
+
 .metric-card > * + * {
   margin-top: 10px;
 }
@@ -370,6 +428,9 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+  /* 배경(옅은 틴트)과 글자색(진한 원색)은 인라인 style로 오고, 테두리만 여기서
+     글자색을 옅게 섞어 만든다 — 카드 배경과 겹쳐도 경계가 또렷해진다. */
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
 }
 
 .radio-row {
@@ -1072,6 +1133,50 @@
   }
 }
 
+/* ---------- 스켈레톤 로딩 ---------- */
+
+.skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    100deg,
+    var(--배경색) 30%,
+    color-mix(in srgb, var(--배경색) 55%, var(--카드-배경) 45%) 50%,
+    var(--배경색) 70%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -50% 0;
+  }
+}
+
+.skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-line {
+  height: 14px;
+  width: 100%;
+}
+
+.skeleton-card {
+  height: 84px;
+  border-radius: var(--radius-lg);
+}
+
+.skeleton-chart {
+  height: 320px;
+  border-radius: var(--radius-lg);
+}
+
 .attach-btn,
 .send-btn {
   display: inline-flex;
@@ -1432,7 +1537,7 @@
   padding: 9px 12px;
   border: 1px solid transparent;
   border-radius: 10px;
-  font-family: 'Segoe UI', 'Malgun Gothic', 'Pretendard', system-ui, sans-serif;
+  font-family: 'Pretendard', 'Segoe UI', 'Malgun Gothic', system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
