@@ -409,6 +409,10 @@ TOOLS = [
         "type": "web_search_20260209",
         "name": "web_search",
         "max_uses": 5,
+        # 도구 목록 전체(꽤 큰 정적 텍스트)를 여기 한 곳에서 캐싱 — 마지막 블록에 걸면
+        # 그 앞의 모든 도구 정의가 함께 캐시된다. 한 턴 안에서 도구 호출이 이어질 때나
+        # 다음 대화 턴에서 똑같은 도구 목록을 다시 보낼 때 그대로 재사용된다.
+        "cache_control": {"type": "ephemeral"},
     },
 ]
 
@@ -900,11 +904,16 @@ def 대화_제목_생성(첫_메시지: str, api_key: str | None = None) -> str:
 _고정_컨텍스트_최대_글자수 = 6000
 
 
-def _시스템_프롬프트_구성() -> str:
+def _시스템_프롬프트_구성() -> list[dict]:
     """사용자가 위키에서 '고정컨텍스트'로 표시한 노트를, Claude Code의 CLAUDE.md처럼
-    모든 AI 채팅 요청에 항상 참고하도록 시스템 프롬프트 뒤에 덧붙인다."""
+    모든 AI 채팅 요청에 항상 참고하도록 시스템 프롬프트 뒤에 덧붙인다.
+
+    캐싱을 위해 문자열 하나가 아니라 블록 리스트로 돌려준다 — 절대 안 바뀌는
+    SYSTEM_PROMPT 블록에만 cache_control을 걸어두면, 고정컨텍스트 노트가 매번
+    달라져도(혹은 아예 없어도) 그 앞의 SYSTEM_PROMPT 캐시는 그대로 재사용된다."""
+    블록들 = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
     if not DB_PATH.exists():
-        return SYSTEM_PROMPT
+        return 블록들
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.row_factory = sqlite3.Row
@@ -914,11 +923,15 @@ def _시스템_프롬프트_구성() -> str:
     finally:
         conn.close()
     if not 고정_노트들:
-        return SYSTEM_PROMPT
+        return 블록들
     묶음 = "\n\n".join(f"## {행['제목']}\n{행['내용'] or ''}" for 행 in 고정_노트들)
     if len(묶음) > _고정_컨텍스트_최대_글자수:
         묶음 = 묶음[:_고정_컨텍스트_최대_글자수] + "\n...(이하 생략)"
-    return SYSTEM_PROMPT + "\n\n[사용자가 위키에서 '고정컨텍스트'로 표시해 항상 참고하라고 지정한 노트]\n" + 묶음
+    블록들.append({
+        "type": "text",
+        "text": "[사용자가 위키에서 '고정컨텍스트'로 표시해 항상 참고하라고 지정한 노트]\n" + 묶음,
+    })
+    return 블록들
 
 
 def 질의하기(question: str, history: list[dict] | None = None, api_key: str | None = None) -> dict:
@@ -951,10 +964,11 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
     for _ in range(5):  # 도구 호출 반복 상한
         response = client.messages.create(
             model=MODEL_NAME,
-            max_tokens=4096,
+            max_tokens=8192,
             system=system_prompt,
             messages=messages,
             tools=TOOLS,
+            thinking={"type": "adaptive"},
         )
 
         if response.stop_reason != "tool_use":
@@ -1012,16 +1026,20 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
         }
         with client.messages.stream(
             model=MODEL_NAME, max_tokens=8192, system=system_prompt, messages=messages, tools=TOOLS,
+            thinking={"type": "adaptive"},
         ) as stream:
             # text_stream만 쓰면 web_search 같은 서버 도구가 실행되는 동안(같은 응답 안에서
             # 클라이언트 왕복 없이 일어남) 화면에 아무 신호도 안 뜬다. 원시 이벤트를 직접 봐서
-            # server_tool_use 블록이 시작될 때도 상태 문구를 띄운다.
+            # server_tool_use 블록이 시작될 때도 상태 문구를 띄운다. thinking_delta는 일부러
+            # 안 잡는다 — 화면엔 보여줄 UI가 없으니 조용히 건너뛰고 최종 답변 텍스트만 스트리밍.
             for event in stream:
                 if event.type == "content_block_start" and event.content_block.type == "server_tool_use":
                     yield {
                         "type": "status",
                         "text": _도구_상태_문구.get(event.content_block.name, f"{event.content_block.name} 실행 중..."),
                     }
+                elif event.type == "content_block_start" and event.content_block.type == "thinking":
+                    yield {"type": "status", "text": "곰곰이 생각하는 중..."}
                 elif event.type == "content_block_delta" and event.delta.type == "text_delta":
                     yield {"type": "token", "text": event.delta.text}
             response = stream.get_final_message()
