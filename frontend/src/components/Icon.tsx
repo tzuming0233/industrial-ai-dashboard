@@ -21,6 +21,8 @@ export type IconName =
   | 'edit'
   | 'clock'
   | 'chevron'
+  | 'copy'
+  | 'check'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -69,6 +71,13 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   chevron: <path d="M9 6l6 6-6 6" />,
+  copy: (
+    <>
+      <rect x="8.5" y="8.5" width="12" height="12" rx="2.5" />
+      <path d="M15.5 8.5V6a2 2 0 0 0-2-2H5.5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2.5" />
+    </>
+  ),
+  check: <path d="M5 12.5l4.5 4.5L19 7" />,
 }
 
 export default function Icon({ name, size = 16 }: { name: IconName; size?: number }) {

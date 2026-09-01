@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -21,6 +21,59 @@ type Props = {
 }
 
 const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp'
+
+// 클로드 앱처럼 여러 줄 코드블록마다 복사 버튼을 붙인다 — 스트리밍 도중에도(코드
+// 블록 자체가 완성됐다면) 바로 눌러 복사할 수 있다.
+function 코드블록({ children }: { children?: ReactNode }) {
+  const ref = useRef<HTMLPreElement>(null)
+  const [복사됨, set복사됨] = useState(false)
+
+  async function 복사() {
+    const text = ref.current?.textContent ?? ''
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      set복사됨(true)
+      setTimeout(() => set복사됨(false), 1500)
+    } catch {
+      // 클립보드 권한이 없는 환경 — 버튼은 그대로 두고 조용히 무시.
+    }
+  }
+
+  return (
+    <div className="code-block-wrap">
+      <button type="button" className="code-copy-btn" onClick={복사}>
+        <Icon name={복사됨 ? 'check' : 'copy'} size={12} />
+        {복사됨 ? '복사됨' : '복사'}
+      </button>
+      <pre ref={ref}>{children}</pre>
+    </div>
+  )
+}
+
+const 마크다운_컴포넌트 = { pre: 코드블록 }
+
+// 답변 전체를 클로드 앱처럼 한 번에 복사 — 스트리밍이 끝난 완성된 메시지에만 붙인다.
+function 답변_복사_버튼({ text }: { text: string }) {
+  const [복사됨, set복사됨] = useState(false)
+
+  async function 복사() {
+    try {
+      await navigator.clipboard.writeText(text)
+      set복사됨(true)
+      setTimeout(() => set복사됨(false), 1500)
+    } catch {
+      // 클립보드 권한이 없는 환경 — 버튼은 그대로 두고 조용히 무시.
+    }
+  }
+
+  return (
+    <button type="button" className="assistant-action-btn" onClick={복사} title="답변 복사">
+      <Icon name={복사됨 ? 'check' : 'copy'} size={13} />
+      {복사됨 ? '복사됨' : '복사'}
+    </button>
+  )
+}
 
 export default function ChatMain({ conversationId, onActivity }: Props) {
   const [loading, setLoading] = useState(true)
@@ -191,7 +244,12 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             </div>
           ) : (
             <div key={i} className="assistant-text">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_컴포넌트}>
+                {m.content}
+              </ReactMarkdown>
+              <div className="assistant-actions">
+                <답변_복사_버튼 text={m.content} />
+              </div>
             </div>
           ),
         )}
@@ -230,7 +288,9 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
               </p>
             )}
             {streamingText ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_컴포넌트}>
+                {streamingText}
+              </ReactMarkdown>
             ) : (
               !streamingStatus && <span className="typing-indicator">AI가 답변을 생성 중...</span>
             )}

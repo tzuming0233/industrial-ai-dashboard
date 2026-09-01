@@ -851,11 +851,76 @@
   margin-top: 4px;
 }
 
+.assistant-text li::marker {
+  color: var(--보조텍스트색);
+}
+
 .assistant-text code {
   background: var(--배경색);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 13px;
+}
+
+.code-block-wrap {
+  position: relative;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--테두리색);
+  background: var(--카드-배경);
+  color: var(--보조텍스트색);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.code-block-wrap:hover .code-copy-btn,
+.code-copy-btn:focus-visible {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  background: var(--배경색);
+  color: var(--본문색);
+}
+
+.assistant-actions {
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.assistant-text:hover .assistant-actions,
+.assistant-text:focus-within .assistant-actions {
+  opacity: 1;
+}
+
+.assistant-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--보조텍스트색);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.assistant-action-btn:hover {
+  background: var(--배경색);
+  color: var(--본문색);
 }
 
 .assistant-text pre {
@@ -892,11 +957,14 @@
   margin: 14px 0;
 }
 
+/* 채팅 답변 안의 제목은 문서 제목이 아니라 "화제 구분 라벨"에 가까워야 해서
+   (클로드 앱도 답변 안 제목을 크고 무겁게 안 씀) 밑줄 구분선 없이 굵기 위주로만
+   구분한다. */
 .assistant-text h1,
 .assistant-text h2,
 .assistant-text h3,
 .assistant-text h4 {
-  margin: 16px 0 8px;
+  margin: 14px 0 6px;
   line-height: 1.4;
   font-weight: 700;
 }
@@ -909,17 +977,15 @@
 }
 
 .assistant-text h1 {
-  font-size: 22px;
-  border-bottom: 1px solid var(--테두리색);
-  padding-bottom: 6px;
+  font-size: 18px;
 }
 
 .assistant-text h2 {
-  font-size: 19px;
+  font-size: 16.5px;
 }
 
 .assistant-text h3 {
-  font-size: 16px;
+  font-size: 15.5px;
 }
 
 .assistant-text h4 {
