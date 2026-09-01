@@ -740,20 +740,35 @@
 }
 
 .assistant-text table {
-  border-collapse: collapse;
-  font-size: 13px;
-  margin-bottom: 10px;
+  /* border-collapse:collapse면 border-radius+overflow:hidden이 브라우저마다
+     제각각으로 깨져서(둥근 모서리가 안 먹음) separate로 바꾼다. */
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+  margin-bottom: 12px;
+  border: 1px solid var(--테두리색);
+  border-radius: 8px;
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
 }
 
 .assistant-text th,
 .assistant-text td {
-  border: 1px solid var(--테두리색);
-  padding: 5px 10px;
+  border: none;
+  border-bottom: 1px solid var(--테두리색);
+  padding: 7px 12px;
   text-align: left;
+}
+
+.assistant-text tr:last-child td {
+  border-bottom: none;
 }
 
 .assistant-text th {
   background: var(--배경색);
+  font-weight: 600;
 }
 
 .assistant-text ul,
@@ -762,11 +777,58 @@
   padding-left: 22px;
 }
 
+.assistant-text li {
+  margin-bottom: 4px;
+}
+
+.assistant-text li:last-child {
+  margin-bottom: 0;
+}
+
+.assistant-text li > ul,
+.assistant-text li > ol {
+  margin-top: 4px;
+}
+
 .assistant-text code {
   background: var(--배경색);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 13px;
+}
+
+.assistant-text pre {
+  background: var(--배경색);
+  border: 1px solid var(--테두리색);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0 0 10px;
+  overflow-x: auto;
+}
+
+.assistant-text pre code {
+  background: none;
+  border-radius: 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.assistant-text a {
+  color: var(--남색-진하게);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.assistant-text a:hover {
+  opacity: 0.8;
+}
+
+.assistant-text hr {
+  border: none;
+  border-top: 1px solid var(--테두리색);
+  margin: 14px 0;
 }
 
 .assistant-text h1,
@@ -806,8 +868,9 @@
 
 .assistant-text blockquote {
   margin: 0 0 10px;
-  padding: 4px 14px;
+  padding: 6px 14px;
   border-left: 3px solid var(--남색);
+  border-radius: 0 6px 6px 0;
   background: var(--남색-연하게);
   color: var(--보조텍스트색);
 }
