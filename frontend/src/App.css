@@ -1184,6 +1184,18 @@
   background: var(--남색-연하게);
 }
 
+.generated-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.generated-file-download-btn {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .mic-btn-active {
   background: var(--엠버코랄) !important;
   color: #fff !important;

@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import {
   applyProposal,
   cancelProposal,
+  downloadGeneratedFile,
   fileDownloadUrl,
   getMessages,
   streamMessage,
@@ -257,15 +258,26 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
         {!isStreaming && 최근_생성파일 && (
           <>
             {['text/html', 'image/svg+xml'].includes(최근_생성파일.mime타입) ? (
-              <a
-                className="generated-file-chip"
-                href={fileDownloadUrl(최근_생성파일.id)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Icon name="sparkles" size={14} />
-                {최근_생성파일.파일명} 미리보기 (새 탭)
-              </a>
+              <div className="generated-file-actions">
+                <a
+                  className="generated-file-chip"
+                  href={fileDownloadUrl(최근_생성파일.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Icon name="sparkles" size={14} />
+                  {최근_생성파일.파일명} 미리보기 (새 탭)
+                </a>
+                <button
+                  type="button"
+                  className="generated-file-chip generated-file-download-btn"
+                  onClick={() => downloadGeneratedFile(최근_생성파일!.id, 최근_생성파일!.파일명)}
+                  title="파일로 다운로드"
+                >
+                  <Icon name="download" size={14} />
+                  다운로드
+                </button>
+              </div>
             ) : (
               <a
                 className="generated-file-chip"

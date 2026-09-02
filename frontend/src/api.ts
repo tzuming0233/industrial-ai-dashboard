@@ -306,6 +306,22 @@ export type 생성_파일 = { id: number; 파일명: string; mime타입: string 
 
 export const fileDownloadUrl = (id: number) => `${API_BASE}/api/files/${id}`
 
+// html/svg/이미지는 백엔드가 미리보기용으로 항상 Content-Disposition: inline을
+// 내려서, 그냥 <a href download>로는(특히 프론트/백엔드가 다른 서브도메인이라
+// 크로스 오리진이라) 새 탭 열람으로만 동작하고 다운로드가 안 될 수 있다 —
+// exportXlsx/exportCsv와 같은 방식으로 fetch해 blob으로 직접 저장한다.
+export async function downloadGeneratedFile(id: number, 파일명: string): Promise<void> {
+  const res = await fetch(fileDownloadUrl(id), { credentials: 'include' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 파일명
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export async function uploadNoteAttachment(file: File): Promise<생성_파일> {
   const form = new FormData()
   form.append('file', file)
