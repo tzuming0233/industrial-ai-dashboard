@@ -451,6 +451,22 @@ def _텍스트_추출(response) -> str:
     return "".join(block.text for block in response.content if block.type == "text")
 
 
+# "최대한 다채롭게", "표·그래프 다 넣어서" 같은 요청은 생각(thinking)+본문 텍스트+
+# create_file의 큰 HTML을 한 응답 안에서 전부 만들다 max_tokens에 걸려 중간에
+# 끊기는 사고가 실제로 재현됐다(라이브 테스트로 확인) — 도구 호출 반복 상한도
+# 5회는 "자료 조회 여러 번 + 파일 생성 + 마무리 답변"에 빠듯해서 8회로 올렸다.
+_도구_호출_반복_상한 = 8
+_블로킹_최대_출력_토큰 = 16000
+_스트리밍_최대_출력_토큰 = 32000
+
+
+def _잘림_안내(부분_텍스트: str) -> str:
+    """stop_reason이 max_tokens일 때(응답이 중간에 잘렸을 때) 빈 화면 대신 사용자가
+    실제로 무슨 일이 있었는지 알 수 있게 안내를 덧붙인다."""
+    안내 = "\n\n*(※ 답변이 길어져 여기서 잘렸습니다. 더 간단하게 나눠서 다시 요청해주세요.)*"
+    return (부분_텍스트 or "") + 안내
+
+
 def 조회_사업현황(
     검색어=None, 사업구분=None, 구분=None, 사업단계=None, 담당자=None, 종료일_이전=None, 종료일_이후=None
 ) -> list[dict]:
@@ -967,10 +983,10 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
     system_prompt = _시스템_프롬프트_구성()
 
     대기중_제안 = None
-    for _ in range(5):  # 도구 호출 반복 상한
+    for _ in range(_도구_호출_반복_상한):
         response = client.messages.create(
             model=MODEL_NAME,
-            max_tokens=8192,
+            max_tokens=_블로킹_최대_출력_토큰,
             system=system_prompt,
             messages=messages,
             tools=TOOLS,
@@ -978,7 +994,10 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
         )
 
         if response.stop_reason != "tool_use":
-            return {"text": _텍스트_추출(response), "pending_action": 대기중_제안}
+            텍스트 = _텍스트_추출(response)
+            if response.stop_reason == "max_tokens":
+                텍스트 = _잘림_안내(텍스트)
+            return {"text": 텍스트, "pending_action": 대기중_제안}
 
         messages.append({"role": "assistant", "content": response.content})
 
@@ -1025,14 +1044,14 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
 
     대기중_제안 = None
     생성된_파일 = None
-    for 회차 in range(5):  # 도구 호출 반복 상한
+    for 회차 in range(_도구_호출_반복_상한):
         yield {
             "type": "status",
             "text": "요청을 확인하는 중..." if 회차 == 0 else "조회 결과를 반영해서 답변을 정리하는 중...",
         }
         with client.messages.stream(
-            model=MODEL_NAME, max_tokens=8192, system=system_prompt, messages=messages, tools=TOOLS,
-            thinking={"type": "adaptive"},
+            model=MODEL_NAME, max_tokens=_스트리밍_최대_출력_토큰, system=system_prompt, messages=messages,
+            tools=TOOLS, thinking={"type": "adaptive"},
         ) as stream:
             # text_stream만 쓰면 web_search 같은 서버 도구가 실행되는 동안(같은 응답 안에서
             # 클라이언트 왕복 없이 일어남) 화면에 아무 신호도 안 뜬다. 원시 이벤트를 직접 봐서
@@ -1051,8 +1070,16 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
             response = stream.get_final_message()
 
         if response.stop_reason != "tool_use":
+            텍스트 = _텍스트_추출(response)
+            if response.stop_reason == "max_tokens":
+                # 실제로 재현된 사고: "최대한 다채롭게" 같은 요청은 생각+본문+큰 HTML
+                # 파일을 한 응답에 다 만들다 여기 걸려서 잘렸다. 프론트(ChatMain.tsx)는
+                # 스트리밍 도중 받은 토큰이 아니라 이 final의 text로 메시지를 만들고,
+                # text가 빈 문자열이면 메시지 자체를 안 그려서 "화면에 아무 것도 안
+                # 뜨는" 것처럼 보였다 — 안내문을 붙여 절대 빈 문자열이 안 되게 한다.
+                텍스트 = _잘림_안내(텍스트)
             yield {
-                "type": "final", "text": _텍스트_추출(response),
+                "type": "final", "text": 텍스트,
                 "pending_action": 대기중_제안, "생성된_파일": 생성된_파일,
             }
             return
