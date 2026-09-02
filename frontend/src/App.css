@@ -1112,6 +1112,31 @@
   margin-top: 8px;
 }
 
+.question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question-option-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+}
+
+.question-option-label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.question-option-desc {
+  color: var(--보조텍스트색);
+  font-size: 12px;
+}
+
 /* ---------- 입력창 ---------- */
 
 .chat-input-row {

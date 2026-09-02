@@ -25,7 +25,7 @@ from pydantic import BaseModel
 import ai_agent
 from backend.app import auth, repository as repo
 from backend.app.files import (
-    _업로드_원본_읽기, _pdf_텍스트_추출, _hwp_텍스트_추출, _LLM_매핑_적용, _제안_추가행들,
+    _업로드_원본_읽기, _hwp_텍스트_추출, _LLM_매핑_적용, _제안_추가행들,
 )
 
 router = APIRouter(dependencies=[Depends(auth.인증_확인)])
@@ -175,6 +175,35 @@ def _제안_요약(제안: dict, 전체_df: pd.DataFrame) -> dict:
                 for _, 행 in 표시용_df.iterrows()
             ],
         }
+    if 유형 == "propose_update_relations":
+        변경목록 = 인자.get("변경목록", [])
+        변경_맵 = {항목.get("관계_id"): 항목 for 항목 in 변경목록}
+        노드_df = repo.온톨로지_노드_불러오기()
+        관계_df = repo.온톨로지_관계_불러오기()
+        대상_df = 관계_df[관계_df["id"].isin(변경_맵.keys())]
+        if 대상_df.empty:
+            return {"유형": 유형, "오류": "수정할 관계를 찾을 수 없습니다."}
+        노드_이름표 = 노드_df[["id", "이름"]]
+        표시용_df = (
+            대상_df.merge(노드_이름표.rename(columns={"id": "출발_노드_id", "이름": "출발"}), on="출발_노드_id", how="left")
+            .merge(노드_이름표.rename(columns={"id": "도착_노드_id", "이름": "도착"}), on="도착_노드_id", how="left")
+        )
+        관계_목록 = []
+        for _, 행 in 표시용_df.iterrows():
+            변경 = 변경_맵.get(행["id"], {})
+            관계_목록.append({
+                "노드1": 행["출발"],
+                "노드2": 행["도착"],
+                "관계유형": 변경.get("관계유형") or 행["관계유형"],
+                "설명": 변경.get("설명") if 변경.get("설명") is not None else "",
+            })
+        return {"유형": 유형, "관계": 관계_목록}
+    if 유형 == "propose_delete_note":
+        노트_id_목록 = 인자.get("노트_id_목록", [])
+        대상_노트들 = [n for n in (repo.노트_불러오기(nid) for nid in 노트_id_목록) if n]
+        if not 대상_노트들:
+            return {"유형": 유형, "오류": "삭제할 노트를 찾을 수 없습니다."}
+        return {"유형": 유형, "행": [{"id": n["id"], "제목": n["제목"]} for n in 대상_노트들]}
     if 유형 in ("propose_add_note", "propose_update_note"):
         # propose_update_business와 같은 모양({유형, 대상id, 제목, 변경:[...]})으로 요약을 만들면
         # ProposalCard.tsx가 새 렌더 분기 없이 그대로 그려준다 — "추가"는 이전값=None인 diff로 표현.
@@ -246,6 +275,15 @@ def _제안_반영(제안: dict, 전체_df: pd.DataFrame, 작성자: str = "AI�
     elif 유형 == "propose_delete_relations":
         for 관계_id in 인자.get("관계_id_목록", []):
             repo.온톨로지_관계_삭제(관계_id)
+    elif 유형 == "propose_update_relations":
+        for 항목 in 인자.get("변경목록", []):
+            관계_id = 항목.get("관계_id")
+            변경필드 = {k: v for k, v in 항목.items() if k != "관계_id" and v is not None}
+            if 관계_id is not None and 변경필드:
+                repo.온톨로지_관계_수정(관계_id, 변경필드)
+    elif 유형 == "propose_delete_note":
+        for 노트_id in 인자.get("노트_id_목록", []):
+            repo.노트_삭제(노트_id)
     elif 유형 == "propose_add_note":
         제목, 내용 = 인자.get("제목", ""), 인자.get("내용", "")
         새_id = repo.노트_생성(제목, 내용, 인자.get("태그", ""), 작성자=작성자)
@@ -369,7 +407,7 @@ def _sse(event: str, data: dict) -> str:
 
 def _마무리(
     대화_id: int, 텍스트: str, 제안: dict | None, 전체_df: pd.DataFrame | None = None,
-    생성된_파일: dict | None = None,
+    생성된_파일: dict | None = None, 질문_대기: dict | None = None,
 ):
     repo.채팅기록_저장(대화_id, "assistant", 텍스트)
 
@@ -381,7 +419,10 @@ def _마무리(
         생성_파일_응답 = {"id": 파일_id, "파일명": 생성된_파일["파일명"], "mime타입": 생성된_파일["mime타입"]}
 
     if not 제안:
-        yield _sse("done", {"text": 텍스트, "제안": None, "action_token": None, "생성_파일": 생성_파일_응답})
+        yield _sse("done", {
+            "text": 텍스트, "제안": None, "action_token": None,
+            "생성_파일": 생성_파일_응답, "질문_대기": 질문_대기,
+        })
         return
     토큰 = uuid.uuid4().hex
     _대기중_제안[대화_id] = {"제안": 제안, "token": 토큰}
@@ -389,7 +430,10 @@ def _마무리(
         전체_df = repo.사업현황_불러오기()
     yield _sse(
         "done",
-        {"text": 텍스트, "제안": _제안_요약(제안, 전체_df), "action_token": 토큰, "생성_파일": 생성_파일_응답},
+        {
+            "text": 텍스트, "제안": _제안_요약(제안, 전체_df), "action_token": 토큰,
+            "생성_파일": 생성_파일_응답, "질문_대기": 질문_대기,
+        },
     )
 
 
@@ -407,22 +451,37 @@ def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스
         else:
             yield from _마무리(
                 대화_id, 이벤트["text"], 이벤트.get("pending_action"),
-                생성된_파일=이벤트.get("생성된_파일"),
+                생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
             )
 
 
 def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list):
+    if 첨부.name.lower().endswith(".pdf"):
+        # 텍스트만 미리 뽑아내는 대신 원본 PDF를 그대로 Claude에 첨부한다 —
+        # 텍스트 레이어뿐 아니라 스캔본·표·차트가 이미지로 박힌 페이지까지 직접
+        # 읽는다(Anthropic 공식 document 콘텐츠 블록, ai_agent._사용자_메시지_구성).
+        원본_바이트 = 첨부.getvalue()
+        합쳐진_질문 = 프로젝트_컨텍스트 + (질문 or f"'{첨부.name}' 문서 내용을 요약해줘.")
+        for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 첨부_문서_바이트=원본_바이트):
+            if 이벤트["type"] in ("token", "status"):
+                yield _이벤트_전달(이벤트)
+            else:
+                yield from _마무리(
+                    대화_id, 이벤트["text"], 이벤트.get("pending_action"),
+                    생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
+                )
+        return
+
+    # HWP는 Claude가 네이티브로 못 읽어서 지금처럼 텍스트만 추출해 넘긴다.
     try:
-        문서_텍스트 = (
-            _pdf_텍스트_추출(첨부) if 첨부.name.lower().endswith(".pdf") else _hwp_텍스트_추출(첨부)
-        )
+        문서_텍스트 = _hwp_텍스트_추출(첨부)
     except Exception as e:
         답변 = f"'{첨부.name}' 문서를 읽지 못했습니다: {e}"
         yield from _마무리(대화_id, 답변, None)
         return
 
     if not 문서_텍스트.strip():
-        답변 = f"'{첨부.name}'에서 텍스트를 추출하지 못했습니다(스캔 이미지 PDF일 수 있습니다)."
+        답변 = f"'{첨부.name}'에서 텍스트를 추출하지 못했습니다."
         yield from _마무리(대화_id, 답변, None)
         return
 
@@ -437,7 +496,7 @@ def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_�
         else:
             yield from _마무리(
                 대화_id, 이벤트["text"], 이벤트.get("pending_action"),
-                생성된_파일=이벤트.get("생성된_파일"),
+                생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
             )
 
 
@@ -459,6 +518,7 @@ def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨�
     최종_텍스트 = ""
     제안 = None
     생성된_파일 = None
+    질문_대기 = None
     for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
@@ -466,21 +526,22 @@ def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨�
             최종_텍스트 = 이벤트["text"]
             제안 = 이벤트.get("pending_action")
             생성된_파일 = 이벤트.get("생성된_파일")
+            질문_대기 = 이벤트.get("질문_대기")
 
     if 제안 and 제안.get("유형") == "import_uploaded_file_as_data":
         yield _sse("status", {"message": "AI가 사업현황 필드에 맞게 정리하는 중..."})
         매핑결과 = ai_agent.업로드_매핑_추론(list(원본_df.columns), 원본_df.head(5).to_dict("records"))
         if "오류" in 매핑결과:
             최종_텍스트 += f"\n\n(반영 중 오류가 있었습니다: {매핑결과['오류']})"
-            yield from _마무리(대화_id, 최종_텍스트, None, 생성된_파일=생성된_파일)
+            yield from _마무리(대화_id, 최종_텍스트, None, 생성된_파일=생성된_파일, 질문_대기=질문_대기)
         else:
             결과_df, 경고_목록 = _LLM_매핑_적용(원본_df, 매핑결과)
             yield from _마무리(
                 대화_id, 최종_텍스트, {"유형": "업로드", "결과_df": 결과_df, "경고": 경고_목록}, 전체_df,
-                생성된_파일=생성된_파일,
+                생성된_파일=생성된_파일, 질문_대기=질문_대기,
             )
     else:
-        yield from _마무리(대화_id, 최종_텍스트, 제안, 전체_df, 생성된_파일=생성된_파일)
+        yield from _마무리(대화_id, 최종_텍스트, 제안, 전체_df, 생성된_파일=생성된_파일, 질문_대기=질문_대기)
 
 
 @router.post("/api/conversations/{conversation_id}/messages/stream")

@@ -334,11 +334,15 @@ export async function uploadNoteAttachment(file: File): Promise<생성_파일> {
   return res.json()
 }
 
+export type 명확화_선택지 = { label: string; description?: string }
+export type 명확화_질문 = { 질문: string; 선택지: 명확화_선택지[] }
+
 type 스트림_done = {
   text: string
   제안: 제안요약 | null
   action_token: string | null
   생성_파일: 생성_파일 | null
+  질문_대기: 명확화_질문 | null
 }
 
 export function streamMessage(

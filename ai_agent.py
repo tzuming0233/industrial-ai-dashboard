@@ -9,6 +9,7 @@ SQLite 조회 함수 1개를 Claude의 tool(도구 호출)로 등록해
     2) 환경변수 ANTHROPIC_API_KEY 설정 (.env.example 참고)
 """
 
+import base64
 import json
 import os
 import sqlite3
@@ -55,13 +56,21 @@ SYSTEM_PROMPT = (
     "해석하세요 — 지시어나 대명사는 직전 대화에서 언급된 사업/값을 가리키는 것으로 보고, 날짜·금액 표현은 "
     "오늘 날짜를 기준으로 정확한 값으로 환산하세요. 뜻이 여러 갈래로 갈릴 때만 되묻고, 상식적으로 뜻이 "
     "분명하면 굳이 확인받지 말고 가장 그럴듯한 해석으로 바로 진행한 뒤 어떻게 해석했는지 짧게 밝히세요 "
-    "(예: '이번주 월요일'을 특정 날짜로 해석했다고 언급). 지나치게 자주 되묻는 것은 사용자를 피곤하게 합니다.\n"
+    "(예: '이번주 월요일'을 특정 날짜로 해석했다고 언급). 지나치게 자주 되묻는 것은 사용자를 피곤하게 합니다. "
+    "정말 되물어야 할 때, 그 갈림길이 2~4개의 명확한 선택지로 나뉜다면 자유 텍스트 질문 대신 "
+    "ask_clarifying_question 도구를 써서 구조화된 선택지로 물으세요 — 사용자가 버튼 하나로 답할 수 있어 "
+    "훨씬 편합니다. 선택지가 명확히 나뉘지 않거나 자유 서술이 필요하면 그냥 자연어로 물으세요.\n"
     "- query_business_status의 '검색어'는 업체명·용역명에 대한 단순 문자열 부분일치(SQL LIKE)일 뿐, "
     "의미나 약어를 이해하지 못합니다. '대학이 들어간 사업'처럼 이름의 의미·줄임말까지 판단해야 하는 "
     "질문에서는 검색어 필터에 의존하지 말고 인자 없이 호출해 전체 목록을 받아온 뒤 당신의 지식으로 "
     "직접 판단하세요 (예: '포항공대'·'한국공대'는 '포항공과대학교'·'한국공과대학교'의 약칭이므로 대학입니다 — "
     "이 글자들이 문자 그대로 '대학'을 포함하지 않아도 의미상 맞다고 판단해야 합니다). 이 시스템의 사업 "
     "건수는 많지 않으므로 전체를 가져와 직접 훑어봐도 괜찮습니다.\n"
+    "- '몇 건이야', '담당자별로 얼마씩이야', '단계별 건수', '전체 계약금액 합계' 같은 개수·합계·그룹별 "
+    "통계 질문에는 query_business_status로 전체 행을 받아 직접 세거나 더하지 말고 summarize_business_status를 "
+    "먼저 쓰세요 — 서버가 SQL로 정확히 집계해줍니다. 단, 위처럼 이름의 의미·약칭까지 판단해야 하는 "
+    "그룹핑(예: '대학이 들어간 사업 몇 건')은 이 도구의 group_by가 다루지 못하므로 query_business_status로 "
+    "전체를 받아 직접 판단하세요.\n"
     "- 사용자가 데이터 추가/수정/삭제를 요청하면 propose_add_business / propose_update_business / "
     "propose_delete_business 도구를 호출하세요. 이 도구들은 실제로 DB를 바꾸지 않고 '제안'만 만듭니다 — "
     "화면에 미리보기가 뜨고 사용자가 직접 확인 버튼을 눌러야 반영됩니다. 도구 호출 후에는 무엇을 제안했는지 "
@@ -75,15 +84,18 @@ SYSTEM_PROMPT = (
     "표현하세요(후속사업/선행사업/동일고객/유사기술/협력/경쟁 등). 이 도구도 실제로 저장하지 않고 제안만 "
     "만들며, '위키' 탭의 그래프 뷰에서 쌓입니다. 새 관계를 제안하기 전에 query_ontology로 이미 같은 "
     "관계가 있는지 확인해 중복 추가를 피하세요. 사용자가 '이 사업이랑 연결된 게 뭐야?' 같은 질문을 하면 "
-    "query_ontology로 실제로 찾아본 뒤 답하세요. 사용자가 관계를 지우거나 잘못 연결된 걸 정정하고 싶어하면 "
-    "query_ontology로 정확한 관계 id를 확인한 뒤 propose_delete_relations로 제안하세요.\n"
+    "query_ontology로 실제로 찾아본 뒤 답하세요. 사용자가 관계를 완전히 지우고 싶어하면 query_ontology로 "
+    "정확한 관계 id를 확인한 뒤 propose_delete_relations로 제안하세요. 관계유형이나 설명만 잘못됐다면 "
+    "(어느 노드끼리 연결됐는지는 그대로) 지우고 새로 만들 필요 없이 propose_update_relations로 그 부분만 "
+    "고치자고 제안하세요.\n"
     "- 사용자가 '저번에', '예전에 얘기했잖아', '이전 대화에서' 같은 표현으로 지금 보이는 대화 범위보다 "
     "더 오래된 내용이나 다른 대화창에서 나눴던 내용을 참조하면, search_past_conversations로 이 시스템의 "
     "전체 대화 기록(다른 대화창 포함)을 검색해서 실제로 찾아본 뒤 답하세요. 짐작으로 답하지 말고, 못 찾으면 "
     "못 찾았다고 말하세요.\n"
     "- '위키' 탭에는 사용자가 쓴 개인 노트가 쌓입니다. 노트 관련 질문이나 '이거 노트로 남겨줘' 같은 요청을 "
     "받으면 query_notes로 먼저 실제로 찾아본 뒤 답하거나, propose_add_note/propose_update_note로 추가·수정을 "
-    "제안하세요(수정은 반드시 먼저 query_notes로 정확한 id를 확인). 노트끼리, 또는 노트와 사업 사이에 관련이 "
+    "제안하세요(수정은 반드시 먼저 query_notes로 정확한 id를 확인). 노트를 지워달라는 요청도 같은 방식으로 "
+    "query_notes로 id를 확인한 뒤 propose_delete_note로 제안하세요. 노트끼리, 또는 노트와 사업 사이에 관련이 "
     "있다는 이야기가 나오면 propose_add_relations를 그대로 쓰되 노드 유형을 '노트'로, 이름은 노트 제목으로 "
     "지정하세요 — 옵시디언의 위키링크처럼 노트는 제목으로 식별되므로 같은 제목이면 같은 노드로 합쳐집니다. "
     "다만 노트끼리의 연결이라면, 노트 본문에 [[다른 노트 제목]]을 써넣으면 저장할 때 시스템이 자동으로 "
@@ -140,6 +152,31 @@ TOOLS = [
                 "manager": {"type": "string", "description": "이 사업을 담당하는 PM/실무자 이름"},
                 "end_before": {"type": "string", "description": "YYYY-MM-DD, 이 날짜 이전에 종료되는 건만"},
                 "end_after": {"type": "string", "description": "YYYY-MM-DD, 이 날짜 이후에 종료되는 건만"},
+            },
+        },
+    },
+    {
+        "name": "summarize_business_status",
+        "description": (
+            "사업현황 데이터를 건수/금액 기준으로 집계해서 반환한다. '사업단계별로 몇 건이야', "
+            "'담당자별 계약금액 합계는', '전체 몇 건이야' 같은 개수·합계·그룹별 통계 질문에는 "
+            "query_business_status로 전체 행을 받아 직접 세지 말고 이 도구를 먼저 써라 — 서버가 "
+            "SQL로 정확히 집계해서 돌려준다. group_by를 지정하면 그 기준별로 나눠서, 지정하지 "
+            "않으면 전체 합계 한 줄을 반환한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "group_by": {
+                    "type": "string",
+                    "enum": ["담당자", "사업구분", "사업단계", "구분"],
+                    "description": "이 기준으로 그룹을 나눠 집계한다. 생략하면 전체 합계만 반환.",
+                },
+                "metric": {
+                    "type": "string",
+                    "enum": ["건수", "계약금액합계", "기수입금액합계"],
+                    "description": "집계할 지표. 생략하면 건수/계약금액합계/기수입금액합계 모두 반환.",
+                },
             },
         },
     },
@@ -291,6 +328,34 @@ TOOLS = [
         },
     },
     {
+        "name": "propose_update_relations",
+        "description": (
+            "기존 관계(엣지) 1건 이상의 관계유형/설명을 수정하자고 제안한다. 실제로 저장하지 않고 화면에 "
+            "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. 관계 id는 반드시 query_ontology로 "
+            "먼저 조회해 확인한 값을 사용해야 한다. 어느 노드끼리 연결됐는지(출발/도착) 자체를 바꾸려면 "
+            "이 도구 대신 propose_delete_relations로 지우고 propose_add_relations로 새로 추가하라 — "
+            "이 도구는 관계유형·설명만 고친다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "updates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "relation_id": {"type": "integer", "description": "수정할 관계의 id (query_ontology 결과에서 확인)"},
+                            "relation_type": {"type": "string", "description": "새 관계유형(선택 — 안 바꾸려면 생략)"},
+                            "description": {"type": "string", "description": "새 설명(선택 — 안 바꾸려면 생략)"},
+                        },
+                        "required": ["relation_id"],
+                    },
+                },
+            },
+            "required": ["updates"],
+        },
+    },
+    {
         "name": "query_ontology",
         "description": (
             "온톨로지(사업/개념 간 관계)에 이미 등록된 관계를 조회한다. 검색어를 지정하면 관련된 노드 이름, "
@@ -376,6 +441,21 @@ TOOLS = [
         },
     },
     {
+        "name": "propose_delete_note",
+        "description": (
+            "'위키' 탭의 노트 1건 이상을 삭제하자고 제안한다. 실제로 삭제하지 않고 화면에 삭제 대상 "
+            "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. id는 반드시 query_notes로 먼저 "
+            "조회해 확인한 값을 사용해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "note_ids": {"type": "array", "items": {"type": "integer"}, "description": "삭제할 노트 id 목록"},
+            },
+            "required": ["note_ids"],
+        },
+    },
+    {
         "name": "create_file",
         "description": (
             "사용자가 다운로드할 수 있는 실제 파일을 만든다. 확인 없이 즉시 만들어져 채팅에 다운로드 "
@@ -406,6 +486,35 @@ TOOLS = [
             "required": ["filename", "content"],
         },
     },
+    {
+        "name": "ask_clarifying_question",
+        "description": (
+            "요청이 여러 갈래로 해석될 수 있고 그 차이가 결과에 실질적인 영향을 줄 때, 자유 텍스트로 "
+            "되묻는 대신 선택지가 2~4개로 명확히 나뉘면 이 도구로 구조화된 질문을 던진다. 선택지가 "
+            "애매하거나 자유 서술형 답이 필요한 경우에는 이 도구를 쓰지 말고 그냥 자연어로 물어라. "
+            "이 도구를 호출하면 이번 턴은 그 즉시 끝나고 사용자의 선택을 기다린다 — 같은 턴 안에서 "
+            "다른 도구를 이어서 호출하거나 텍스트를 더 생성하지 마라."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "사용자에게 물어볼 질문"},
+                "options": {
+                    "type": "array",
+                    "description": "사용자가 고를 수 있는 선택지 2~4개",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string", "description": "선택지의 짧은 이름"},
+                            "description": {"type": "string", "description": "선택지에 대한 부연 설명(선택)"},
+                        },
+                        "required": ["label"],
+                    },
+                },
+            },
+            "required": ["question", "options"],
+        },
+    },
     # Anthropic이 서버에서 직접 실행하는 서버 도구 — 클라이언트 쪽 실행 코드(_도구_실행 분기)가
     # 필요 없다. tool_use가 아니라 server_tool_use/web_search_tool_result 블록으로 응답에 섞여
     # 오고, stop_reason도 보통 "tool_use"가 아니라 "end_turn"이라 기존 도구 호출 루프를 그대로
@@ -424,12 +533,14 @@ TOOLS = [
 
 제안_도구명들 = {
     "propose_add_business", "propose_update_business", "propose_delete_business", "propose_add_relations",
-    "import_uploaded_file_as_data", "propose_delete_relations", "propose_add_note", "propose_update_note",
+    "import_uploaded_file_as_data", "propose_delete_relations", "propose_update_relations",
+    "propose_add_note", "propose_update_note", "propose_delete_note",
 }
 
 # 스트리밍 중 "지금 뭘 하고 있는지" 화면에 보여주기 위한 도구별 상태 문구.
 _도구_상태_문구 = {
     "query_business_status": "사업현황을 조회하는 중...",
+    "summarize_business_status": "사업현황을 집계하는 중...",
     "search_past_conversations": "과거 대화를 검색하는 중...",
     "query_ontology": "온톨로지를 조회하는 중...",
     "propose_add_business": "추가할 내용을 정리하는 중...",
@@ -437,11 +548,14 @@ _도구_상태_문구 = {
     "propose_delete_business": "삭제 대상을 정리하는 중...",
     "propose_add_relations": "추가할 관계를 정리하는 중...",
     "propose_delete_relations": "삭제할 관계를 정리하는 중...",
+    "propose_update_relations": "수정할 관계를 정리하는 중...",
     "import_uploaded_file_as_data": "업로드한 파일을 반영할 준비를 하는 중...",
     "query_notes": "노트를 조회하는 중...",
     "propose_add_note": "노트 내용을 정리하는 중...",
     "propose_update_note": "수정할 노트 내용을 정리하는 중...",
+    "propose_delete_note": "삭제할 노트를 정리하는 중...",
     "create_file": "파일을 만드는 중...",
+    "ask_clarifying_question": "질문을 정리하는 중...",
     "web_search": "웹을 검색하는 중...",
 }
 
@@ -465,6 +579,26 @@ def _잘림_안내(부분_텍스트: str) -> str:
     실제로 무슨 일이 있었는지 알 수 있게 안내를 덧붙인다."""
     안내 = "\n\n*(※ 답변이 길어져 여기서 잘렸습니다. 더 간단하게 나눠서 다시 요청해주세요.)*"
     return (부분_텍스트 or "") + 안내
+
+
+def _사용자_메시지_구성(question: str, 첨부_문서_바이트: bytes | None):
+    """PDF를 텍스트로 미리 뽑아내는 대신 원본 그대로 첨부해, Claude가 텍스트뿐
+    아니라 스캔본·표·차트가 이미지로 박힌 페이지까지 직접 읽게 한다 — Anthropic
+    공식 document 콘텐츠 블록(별도 OCR/래스터화 코드 불필요, docs.anthropic.com
+    으로 확인한 실제 API 모양)."""
+    if not 첨부_문서_바이트:
+        return question
+    return [
+        {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": base64.standard_b64encode(첨부_문서_바이트).decode("ascii"),
+            },
+        },
+        {"type": "text", "text": question},
+    ]
 
 
 def 조회_사업현황(
@@ -516,6 +650,41 @@ def 조회_사업현황(
         conn.close()
 
 
+_집계_지표_컬럼 = {
+    "건수": "COUNT(*) AS 건수",
+    "계약금액합계": "SUM(계약금액) AS 계약금액합계",
+    "기수입금액합계": "SUM(기수입금액) AS 기수입금액합계",
+}
+_집계_허용_그룹기준 = {"담당자", "사업구분", "사업단계", "구분"}
+
+
+def 조회_사업현황_집계(그룹기준: str | None = None, 지표: str | None = None) -> list[dict]:
+    if not DB_PATH.exists():
+        return []
+    if 그룹기준 and 그룹기준 not in _집계_허용_그룹기준:
+        raise ValueError(f"지원하지 않는 group_by입니다: {그룹기준}")
+    if 지표 and 지표 not in _집계_지표_컬럼:
+        raise ValueError(f"지원하지 않는 metric입니다: {지표}")
+
+    지표_목록 = [지표] if 지표 else list(_집계_지표_컬럼)
+    선택절 = ", ".join(_집계_지표_컬럼[m] for m in 지표_목록)
+    그룹_선택 = f"{그룹기준}, " if 그룹기준 else ""
+    쿼리 = f"""
+        SELECT {그룹_선택}{선택절}
+        FROM 사업현황
+        {"GROUP BY " + 그룹기준 if 그룹기준 else ""}
+        {"ORDER BY " + 그룹기준 if 그룹기준 else ""}
+    """
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(쿼리).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
 def search_past_conversations(검색어: str) -> list[dict]:
     if not DB_PATH.exists():
         return []
@@ -552,6 +721,10 @@ def propose_delete_business(ids: list[int]) -> dict:
 
 def propose_add_relations(관계목록: list[dict]) -> dict:
     return {"확인": f"{len(관계목록)}개 관계 추가를 제안했습니다. 화면에서 확인 후 온톨로지에 반영됩니다."}
+
+
+def propose_update_relations(변경목록: list[dict]) -> dict:
+    return {"확인": f"{len(변경목록)}개 관계 수정을 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
 def import_uploaded_file_as_data() -> dict:
@@ -681,11 +854,21 @@ def propose_update_note(id: int, 변경필드: dict) -> dict:
     return {"확인": f"id={id} 노트의 {list(변경필드.keys())} 변경을 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
+def propose_delete_note(노트_id_목록: list[int]) -> dict:
+    return {"확인": f"{len(노트_id_목록)}개 노트 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
 def create_file(파일명: str, 내용: str) -> dict:
     """다른 propose_* 함수들처럼 확인 문구만 돌려준다 — 실제 바이트 생성은 스트리밍 루프
     (질의하기_스트림)에서만 하고 tool_result에는 포함하지 않는다(컨텍스트에 바이너리를 안 넣기 위함).
     블로킹 버전(질의하기, Streamlit용)에서 호출돼도 에러 없이 확인만 하고 끝난다."""
     return {"확인": f"'{파일명}' 파일을 만들었습니다. 화면에 다운로드 링크가 표시됩니다."}
+
+
+def ask_clarifying_question(질문: str, 선택지: list[dict]) -> dict:
+    """create_file과 같은 패턴 — 실제 화면 표시(질문_대기 필드)는 스트리밍 루프에서 처리하고,
+    여기서는 확인 문구만 돌려준다."""
+    return {"확인": f"'{질문}' 질문을 사용자에게 구조화된 선택지로 물었습니다. 사용자의 다음 메시지를 기다리세요."}
 
 
 def 노트_위키_정리(내용: str, api_key: str | None = None) -> str:
@@ -718,16 +901,20 @@ _상위_키_매핑 = {
         "query": "검색어", "category": "사업구분", "type": "구분", "stage": "사업단계",
         "manager": "담당자", "end_before": "종료일_이전", "end_after": "종료일_이후",
     },
+    "summarize_business_status": {"group_by": "그룹기준", "metric": "지표"},
     "search_past_conversations": {"query": "검색어"},
     "propose_add_business": {"business_list": "사업목록"},
     "propose_update_business": {"changes": "변경필드"},
     "propose_add_relations": {"relations": "관계목록"},
+    "propose_update_relations": {"updates": "변경목록"},
     "query_ontology": {"query": "검색어"},
     "propose_delete_relations": {"relation_ids": "관계_id_목록"},
     "query_notes": {"query": "검색어"},
     "propose_add_note": {"title": "제목", "content": "내용", "tags": "태그"},
     "propose_update_note": {"changes": "변경필드"},
+    "propose_delete_note": {"note_ids": "노트_id_목록"},
     "create_file": {"filename": "파일명", "content": "내용"},
+    "ask_clarifying_question": {"question": "질문", "options": "선택지"},
 }
 
 _사업항목_키_매핑 = {
@@ -743,6 +930,8 @@ _관계항목_키_매핑 = {
     "relation_type": "관계유형", "description": "설명",
 }
 
+_관계수정항목_키_매핑 = {"relation_id": "관계_id", "relation_type": "관계유형", "description": "설명"}
+
 
 def _키_변환(항목: dict, 매핑: dict) -> dict:
     return {매핑.get(k, k): v for k, v in 항목.items()}
@@ -755,12 +944,16 @@ def _도구_인자_한글화(name: str, tool_input: dict) -> dict:
         변환됨["사업목록"] = [_키_변환(항목, _사업항목_키_매핑) for 항목 in 변환됨.get("사업목록", [])]
     elif name == "propose_add_relations":
         변환됨["관계목록"] = [_키_변환(항목, _관계항목_키_매핑) for 항목 in 변환됨.get("관계목록", [])]
+    elif name == "propose_update_relations":
+        변환됨["변경목록"] = [_키_변환(항목, _관계수정항목_키_매핑) for 항목 in 변환됨.get("변경목록", [])]
     return 변환됨
 
 
 def _도구_실행(name: str, tool_input: dict):
     if name == "query_business_status":
         return 조회_사업현황(**tool_input)
+    if name == "summarize_business_status":
+        return 조회_사업현황_집계(**tool_input)
     if name == "search_past_conversations":
         return search_past_conversations(**tool_input)
     if name == "propose_add_business":
@@ -771,6 +964,8 @@ def _도구_실행(name: str, tool_input: dict):
         return propose_delete_business(**tool_input)
     if name == "propose_add_relations":
         return propose_add_relations(**tool_input)
+    if name == "propose_update_relations":
+        return propose_update_relations(**tool_input)
     if name == "import_uploaded_file_as_data":
         return import_uploaded_file_as_data(**tool_input)
     if name == "query_ontology":
@@ -783,9 +978,25 @@ def _도구_실행(name: str, tool_input: dict):
         return propose_add_note(**tool_input)
     if name == "propose_update_note":
         return propose_update_note(**tool_input)
+    if name == "propose_delete_note":
+        return propose_delete_note(**tool_input)
     if name == "create_file":
         return create_file(**tool_input)
+    if name == "ask_clarifying_question":
+        return ask_clarifying_question(**tool_input)
     raise ValueError(f"알 수 없는 도구: {name}")
+
+
+def _도구_실행_안전(name: str, tool_input: dict) -> tuple[dict, bool]:
+    """_도구_실행()을 try/except로 감싼다 — 전에는 잘못된 id, DB 제약 위반 같은
+    예외가 그대로 새서 대화 전체가 원시 에러와 함께 끊겼다(스트리밍 경로는
+    backend/app/chat.py의 바깥쪽 try/except가 SSE error 이벤트로 잘라버림).
+    이제는 실패도 tool_result(is_error=True)로 모델에 돌려줘서, 모델이 실패를
+    자연어로 설명하거나 다른 방식으로 재시도할 수 있게 한다."""
+    try:
+        return _도구_실행(name, tool_input), False
+    except Exception as e:
+        return {"오류": f"{name} 실행 중 문제가 발생했습니다: {e}"}, True
 
 
 대상_필드_설명 = {
@@ -956,14 +1167,23 @@ def _시스템_프롬프트_구성() -> list[dict]:
     return 블록들
 
 
-def 질의하기(question: str, history: list[dict] | None = None, api_key: str | None = None) -> dict:
+def 질의하기(
+    question: str,
+    history: list[dict] | None = None,
+    api_key: str | None = None,
+    첨부_문서_바이트: bytes | None = None,
+) -> dict:
     """자연어 질문 -> Claude가 SQLite를 조회하거나 변경을 제안하며 답변 생성
 
     history: [{"role": "user"/"assistant", "content": "..."}] 형태의 이전 대화 이력.
     도구 호출 내역은 이번 턴 안에서만 쓰고 반환값에는 포함하지 않는다.
+    첨부_문서_바이트: PDF 원본 바이트(있으면 Claude가 텍스트+시각적 레이아웃을
+    직접 읽는다 — 스캔 이미지 PDF도 대응됨).
 
-    반환값: {"text": 답변 문자열, "pending_action": {"유형": 도구명, "인자": {...}} 또는 None}
-    pending_action은 실제로 반영된 것이 아니라 사용자 확인이 필요한 제안이다.
+    반환값: {"text": 답변 문자열, "pending_action": {"유형": 도구명, "인자": {...}} 또는 None,
+    "질문_대기": {"질문": ..., "선택지": [...]} 또는 None}
+    pending_action은 실제로 반영된 것이 아니라 사용자 확인이 필요한 제안이다. 질문_대기가 있으면
+    ask_clarifying_question이 호출된 것 — 이번 턴은 끝났고 사용자의 선택을 기다려야 한다.
     """
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
@@ -976,10 +1196,13 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
         return {
             "text": "ANTHROPIC_API_KEY가 설정되어 있지 않습니다. .env 파일(로컬) 또는 Streamlit Cloud의 Secrets 설정을 확인하세요.",
             "pending_action": None,
+            "질문_대기": None,
         }
 
     client = Anthropic(api_key=key)
-    messages = list(history or []) + [{"role": "user", "content": question}]
+    messages = list(history or []) + [
+        {"role": "user", "content": _사용자_메시지_구성(question, 첨부_문서_바이트)}
+    ]
     system_prompt = _시스템_프롬프트_구성()
 
     대기중_제안 = None
@@ -997,36 +1220,55 @@ def 질의하기(question: str, history: list[dict] | None = None, api_key: str 
             텍스트 = _텍스트_추출(response)
             if response.stop_reason == "max_tokens":
                 텍스트 = _잘림_안내(텍스트)
-            return {"text": 텍스트, "pending_action": 대기중_제안}
+            return {"text": 텍스트, "pending_action": 대기중_제안, "질문_대기": None}
 
         messages.append({"role": "assistant", "content": response.content})
 
         결과_블록들 = []
+        질문_대기 = None
         for block in response.content:
             if block.type != "tool_use":
                 continue
             도구_인자 = _도구_인자_한글화(block.name, block.input or {})
-            결과 = _도구_실행(block.name, 도구_인자)
-            if block.name in 제안_도구명들:
+            결과, 실패함 = _도구_실행_안전(block.name, 도구_인자)
+            if block.name in 제안_도구명들 and not 실패함:
                 대기중_제안 = {"유형": block.name, "인자": 도구_인자}
+            if block.name == "ask_clarifying_question" and not 실패함:
+                질문_대기 = 도구_인자
             결과_블록들.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
                 "content": json.dumps(결과, ensure_ascii=False),
+                "is_error": 실패함,
             })
+
+        if 질문_대기 is not None:
+            return {"text": _텍스트_추출(response), "pending_action": 대기중_제안, "질문_대기": 질문_대기}
+
         messages.append({"role": "user", "content": 결과_블록들})
 
-    return {"text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.", "pending_action": 대기중_제안}
+    return {
+        "text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.",
+        "pending_action": 대기중_제안, "질문_대기": None,
+    }
 
 
-def 질의하기_스트림(question: str, history: list[dict] | None = None, api_key: str | None = None):
+def 질의하기_스트림(
+    question: str,
+    history: list[dict] | None = None,
+    api_key: str | None = None,
+    첨부_문서_바이트: bytes | None = None,
+):
     """질의하기()의 스트리밍 버전 — FastAPI SSE 엔드포인트 전용.
 
     제너레이터: 텍스트가 도착할 때마다 {"type": "token", "text": "..."}를 yield하고,
     턴이 끝나면 마지막으로 {"type": "final", "text": 전체답변, "pending_action": ...,
-    "생성된_파일": ...}을 한 번 yield한다(Streamlit용 질의하기()와 반환 형태를 맞췄다 —
-    다만 생성된_파일은 스트리밍 전용 필드). tool_use 루프 로직은 질의하기()와 동일 —
-    브라우저가 받은 토큰이 아니라 stream.get_final_message()만 신뢰해서 도구 호출을 판단한다.
+    "생성된_파일": ..., "질문_대기": ...}을 한 번 yield한다(Streamlit용 질의하기()와 반환 형태를
+    맞췄다 — 다만 생성된_파일/질문_대기는 스트리밍 전용 필드). tool_use 루프 로직은 질의하기()와
+    동일 — 브라우저가 받은 토큰이 아니라 stream.get_final_message()만 신뢰해서 도구 호출을 판단한다.
+    첨부_문서_바이트: PDF 원본 바이트(질의하기()와 동일 — 스캔 이미지 PDF도 대응됨).
+    질문_대기: ask_clarifying_question이 호출되면 {"질문": ..., "선택지": [...]}로 채워지고,
+    그 즉시 턴이 끝난다(추가 도구 호출/텍스트 생성 없음) — create_file과 같은 특수 처리 패턴.
     """
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
@@ -1035,11 +1277,14 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
             "text": "ANTHROPIC_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인하세요.",
             "pending_action": None,
             "생성된_파일": None,
+            "질문_대기": None,
         }
         return
 
     client = Anthropic(api_key=key)
-    messages = list(history or []) + [{"role": "user", "content": question}]
+    messages = list(history or []) + [
+        {"role": "user", "content": _사용자_메시지_구성(question, 첨부_문서_바이트)}
+    ]
     system_prompt = _시스템_프롬프트_구성()
 
     대기중_제안 = None
@@ -1080,35 +1325,47 @@ def 질의하기_스트림(question: str, history: list[dict] | None = None, api
                 텍스트 = _잘림_안내(텍스트)
             yield {
                 "type": "final", "text": 텍스트,
-                "pending_action": 대기중_제안, "생성된_파일": 생성된_파일,
+                "pending_action": 대기중_제안, "생성된_파일": 생성된_파일, "질문_대기": None,
             }
             return
 
         messages.append({"role": "assistant", "content": response.content})
 
         결과_블록들 = []
+        질문_대기 = None
         for block in response.content:
             if block.type != "tool_use":
                 continue
             yield {"type": "status", "text": _도구_상태_문구.get(block.name, f"{block.name} 실행 중...")}
             도구_인자 = _도구_인자_한글화(block.name, block.input or {})
-            결과 = _도구_실행(block.name, 도구_인자)
-            if block.name in 제안_도구명들:
+            결과, 실패함 = _도구_실행_안전(block.name, 도구_인자)
+            if block.name in 제안_도구명들 and not 실패함:
                 대기중_제안 = {"유형": block.name, "인자": 도구_인자}
-            if block.name == "create_file":
+            if block.name == "create_file" and not 실패함:
                 from backend.app.files import 파일_mime타입, 파일_생성_바이트
 
                 파일명 = 도구_인자.get("파일명", "생성파일.txt")
                 내용_바이트 = 파일_생성_바이트(파일명, 도구_인자.get("내용", ""))
                 생성된_파일 = {"파일명": 파일명, "mime타입": 파일_mime타입(파일명), "내용": 내용_바이트}
+            if block.name == "ask_clarifying_question" and not 실패함:
+                질문_대기 = 도구_인자
             결과_블록들.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
                 "content": json.dumps(결과, ensure_ascii=False),
+                "is_error": 실패함,
             })
+
+        if 질문_대기 is not None:
+            yield {
+                "type": "final", "text": _텍스트_추출(response),
+                "pending_action": 대기중_제안, "생성된_파일": 생성된_파일, "질문_대기": 질문_대기,
+            }
+            return
+
         messages.append({"role": "user", "content": 결과_블록들})
 
     yield {
         "type": "final", "text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.",
-        "pending_action": 대기중_제안, "생성된_파일": 생성된_파일,
+        "pending_action": 대기중_제안, "생성된_파일": 생성된_파일, "질문_대기": None,
     }

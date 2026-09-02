@@ -75,20 +75,25 @@ export default function ProposalCard({ 요약, 처리중, onApply, onCancel }: P
             </>
           )}
 
-          {유형 === 'propose_delete_business' && (
+          {(유형 === 'propose_delete_business' || 유형 === 'propose_delete_note') && (
             <>
               <p className="proposal-warning">{요약.행?.length ?? 0}건이 삭제됩니다.</p>
               {요약.행 && <행테이블 행={요약.행} />}
             </>
           )}
 
-          {(유형 === 'propose_add_relations' || 유형 === 'propose_delete_relations') && (
+          {(유형 === 'propose_add_relations' ||
+            유형 === 'propose_delete_relations' ||
+            유형 === 'propose_update_relations') && (
             <>
               {유형 === 'propose_delete_relations' && (
                 <p className="proposal-warning">{요약.관계?.length ?? 0}개 관계가 삭제됩니다.</p>
               )}
               {유형 === 'propose_add_relations' && (
                 <p className="proposal-caption">{요약.관계?.length ?? 0}개 관계를 온톨로지에 추가합니다.</p>
+              )}
+              {유형 === 'propose_update_relations' && (
+                <p className="proposal-caption">{요약.관계?.length ?? 0}개 관계를 이렇게 수정합니다.</p>
               )}
               {요약.관계?.map((r, i) => (
                 <div key={i} className="proposal-relation-row">

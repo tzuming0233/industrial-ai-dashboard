@@ -10,9 +10,11 @@ import {
   streamMessage,
   type 대기중_제안,
   type 메시지,
+  type 명확화_질문,
   type 생성_파일,
 } from '../api'
 import ProposalCard from './ProposalCard'
+import QuestionCard from './QuestionCard'
 import Icon from './Icon'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
@@ -90,6 +92,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [최근_생성파일, set최근_생성파일] = useState<생성_파일 | null>(null)
+  const [pendingQuestion, setPendingQuestion] = useState<명확화_질문 | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -103,6 +106,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     setLoading(true)
     setError(null)
     setPendingProposal(null)
+    setPendingQuestion(null)
     setStreamingText('')
     setIsStreaming(false)
     set최근_생성파일(null)
@@ -123,11 +127,8 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [messages, streamingText, pendingProposal])
 
-  function 전송(e: React.FormEvent) {
-    e.preventDefault()
+  function 보내기(질문: string, 파일: File | null) {
     if (isStreaming) return
-    const 질문 = inputText.trim()
-    const 파일 = attachedFile
     if (!질문 && !파일) return
 
     let 표시_메시지 = 질문
@@ -140,6 +141,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     setAttachedFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
     setPendingProposal(null)
+    setPendingQuestion(null)
     setError(null)
     setStreamingStatus(null)
     setStreamingText('')
@@ -170,6 +172,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             setPendingProposal({ 요약: data.제안, action_token: data.action_token })
           }
           set최근_생성파일(data.생성_파일 ?? null)
+          setPendingQuestion(data.질문_대기 ?? null)
           onActivity()
         },
         onError: (message) => {
@@ -183,6 +186,16 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     ).catch(() => {
       /* onError 핸들러가 이미 상태를 처리함 */
     })
+  }
+
+  function 전송(e: React.FormEvent) {
+    e.preventDefault()
+    보내기(inputText.trim(), attachedFile)
+  }
+
+  function 선택지_클릭(label: string) {
+    setPendingQuestion(null)
+    보내기(label, null)
   }
 
   async function 제안_적용() {
@@ -316,6 +329,10 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             onApply={제안_적용}
             onCancel={제안_취소}
           />
+        )}
+
+        {!isStreaming && pendingQuestion && (
+          <QuestionCard 질문={pendingQuestion} onSelect={선택지_클릭} />
         )}
 
         {error && <p className="proposal-error">오류: {error}</p>}

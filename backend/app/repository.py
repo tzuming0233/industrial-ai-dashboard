@@ -773,6 +773,23 @@ def 온톨로지_관계_삭제(관계_id: int) -> None:
     온톨로지_관계_불러오기.clear()
 
 
+def 온톨로지_관계_수정(관계_id: int, 변경필드: dict) -> None:
+    """관계유형/설명만 고친다 — 어느 노드끼리 연결됐는지(출발/도착) 자체를 바꾸는
+    건 지원하지 않는다(그건 삭제 후 재생성이 더 명확함)."""
+    허용_필드 = {"관계유형", "설명"}
+    반영할_필드 = {k: v for k, v in 변경필드.items() if k in 허용_필드 and v is not None}
+    if not 반영할_필드:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        set절 = ", ".join(f"{c} = ?" for c in 반영할_필드)
+        conn.execute(f"UPDATE 온톨로지_관계 SET {set절} WHERE id = ?", [*반영할_필드.values(), int(관계_id)])
+        conn.commit()
+    finally:
+        conn.close()
+    온톨로지_관계_불러오기.clear()
+
+
 def 온톨로지_초기화() -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
