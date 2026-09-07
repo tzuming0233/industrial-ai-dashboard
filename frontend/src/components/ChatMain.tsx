@@ -23,7 +23,7 @@ type Props = {
   onActivity: () => void
 }
 
-const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp'
+const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp,.png,.jpg,.jpeg,.gif,.webp'
 
 // 클로드 앱처럼 여러 줄 코드블록마다 복사 버튼을 붙인다 — 스트리밍 도중에도(코드
 // 블록 자체가 완성됐다면) 바로 눌러 복사할 수 있다.
@@ -243,7 +243,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
         {loading && <p className="sidebar-caption">불러오는 중...</p>}
         {!loading && messages.length === 0 && !isStreaming && (
           <p className="chat-empty-hint">
-            예: '이번달 종료되는 사업은?' / '가나전자 사업을 완료 상태로 바꿔줘' — 엑셀·CSV·PDF·HWP
+            예: '이번달 종료되는 사업은?' / '가나전자 사업을 완료 상태로 바꿔줘' — 엑셀·CSV·PDF·HWP·이미지
             파일을 첨부하면 무조건 데이터로 반영하지 않고, 검토·상의가 필요한지 반영이 필요한지
             먼저 판단합니다.
           </p>

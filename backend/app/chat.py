@@ -497,6 +497,31 @@ def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_�
             )
 
 
+_이미지_MIME_맵 = {
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "gif": "image/gif", "webp": "image/webp",
+}
+
+
+def _이미지_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list):
+    # PDF와 같은 패턴 — 별도 OCR 없이 원본 이미지를 그대로 Claude에 첨부해 네이티브
+    # 비전으로 직접 읽게 한다(화이트보드 사진, 명함, 스크린샷 등).
+    확장자 = 첨부.name.rsplit(".", 1)[-1].lower()
+    mime타입 = _이미지_MIME_맵.get(확장자, "image/png")
+    원본_바이트 = 첨부.getvalue()
+    합쳐진_질문 = 프로젝트_컨텍스트 + (질문 or f"'{첨부.name}' 이미지 내용을 설명해줘.")
+    for 이벤트 in ai_agent.질의하기_스트림(
+        합쳐진_질문, history=API용_기록, 첨부_이미지_바이트=원본_바이트, 첨부_이미지_mime타입=mime타입,
+    ):
+        if 이벤트["type"] in ("token", "status"):
+            yield _이벤트_전달(이벤트)
+        else:
+            yield from _마무리(
+                대화_id, 이벤트["text"], 이벤트.get("pending_action"),
+                생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
+            )
+
+
 def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 전체_df: pd.DataFrame):
     원본_df = _업로드_원본_읽기(첨부)
     if 원본_df.empty:
@@ -576,6 +601,7 @@ async def 메시지_스트림(
     파일명_소문자 = 첨부.name.lower() if 첨부 else ""
     표_파일 = 파일명_소문자.endswith((".csv", ".xlsx", ".xls"))
     문서_파일 = 파일명_소문자.endswith((".pdf", ".hwp"))
+    이미지_파일 = 파일명_소문자.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
 
     def 이벤트_스트림():
         try:
@@ -583,6 +609,8 @@ async def 메시지_스트림(
                 yield from _표_파일_스트림(대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 전체_df)
             elif 문서_파일:
                 yield from _문서_파일_스트림(대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록)
+            elif 이미지_파일:
+                yield from _이미지_파일_스트림(대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록)
             elif 질문:
                 yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록)
             else:

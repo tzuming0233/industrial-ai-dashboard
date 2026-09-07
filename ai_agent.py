@@ -25,8 +25,9 @@ load_dotenv(BASE_DIR / ".env")
 
 # 필요 시 다른 모델로 교체 가능
 MODEL_NAME = "claude-sonnet-5"
-# 대화 제목 생성처럼 가벼운 작업에는 더 빠르고 저렴한 모델을 쓴다.
-제목생성_MODEL_NAME = "claude-haiku-4-5-20251001"
+# 대화 제목 생성·대화 요약·노트 정리처럼 깊은 추론이 필요 없는 가벼운 작업에는
+# 더 빠르고 저렴한 모델을 쓴다(Vertex AI의 Flash/Pro 계층 구분과 같은 개념).
+경량_MODEL_NAME = "claude-haiku-4-5-20251001"
 
 SYSTEM_PROMPT = (
     "당신은 산업AI팀 사업 통합관리 시스템의 AI 에이전트입니다. 데이터 조회/추가/수정/삭제뿐 아니라, "
@@ -54,12 +55,14 @@ SYSTEM_PROMPT = (
     "놓치기 쉬운 리스크도 함께 짚어 균형 잡힌 판단을 돕는 게 좋습니다. 사용자가 '그 얘기는 잊고 처음부터 "
     "다시 보자', '지금까지 논의는 무시하고' 같은 말로 명시적으로 리셋을 요청하면, 그 이전 대화의 전제나 "
     "결론에 얽매이지 말고 완전히 새로 접근하세요.\n\n"
-    "- 사용자가 엑셀/CSV/PDF/HWP 파일을 첨부하면 그 내용(미리보기 또는 추출된 텍스트)이 대화에 함께 "
-    "들어옵니다. 파일이 첨부됐다고 무조건 사업현황에 반영해야 하는 건 아닙니다 — 사용자가 검토·분석·의견을 "
-    "원하는 것 같으면 그냥 자유롭게 대화하듯 답하세요(이 표에 이상한 점이 있는지, 어떻게 개선하면 좋을지 "
-    "등). 사용자가 실제로 이 파일 내용을 사업현황에 추가/등록/반영하길 원한다고 판단될 때만 엑셀/CSV의 "
-    "경우 import_uploaded_file_as_data를, PDF/HWP처럼 정형화되지 않은 문서의 경우 직접 파악한 정보로 "
-    "propose_add_business를 호출하세요. 애매하면 도구를 호출하기 전에 어떻게 하면 좋을지 먼저 물어보세요.\n\n"
+    "- 사용자가 엑셀/CSV/PDF/HWP/이미지(사진·스크린샷·화이트보드 촬영본 등) 파일을 첨부하면 그 내용이 "
+    "대화에 함께 들어옵니다(PDF와 이미지는 텍스트뿐 아니라 시각적 내용까지 직접 봅니다 — 스캔본, 손글씨, "
+    "표·차트, 명함, 화이트보드 메모 등도 실제로 읽어낼 수 있습니다). 파일이 첨부됐다고 무조건 사업현황에 "
+    "반영해야 하는 건 아닙니다 — 사용자가 검토·분석·의견을 원하는 것 같으면 그냥 자유롭게 대화하듯 답하세요"
+    "(이 표에 이상한 점이 있는지, 어떻게 개선하면 좋을지 등). 사용자가 실제로 이 파일 내용을 사업현황에 "
+    "추가/등록/반영하길 원한다고 판단될 때만 엑셀/CSV의 경우 import_uploaded_file_as_data를, "
+    "PDF/HWP/이미지처럼 정형화되지 않은 경우 직접 파악한 정보로 propose_add_business를 호출하세요. "
+    "애매하면 도구를 호출하기 전에 어떻게 하면 좋을지 먼저 물어보세요.\n\n"
     "- 엄격한 사실 확인이 필요한 부분은 딱 하나입니다: 특정 사업의 구체적 레코드 값(금액, 날짜, 담당자, "
     "사업단계 등)은 반드시 query_business_status로 조회한 실제 데이터에 근거해야 하고, 그런 값을 지어내면 "
     "안 됩니다. 그 외에는 자유롭게 사고하세요 — 데이터를 바탕으로 한 분석·해석·추론·의견·우선순위 제안, "
@@ -596,24 +599,39 @@ def _잘림_안내(부분_텍스트: str) -> str:
     return (부분_텍스트 or "") + 안내
 
 
-def _사용자_메시지_구성(question: str, 첨부_문서_바이트: bytes | None):
-    """PDF를 텍스트로 미리 뽑아내는 대신 원본 그대로 첨부해, Claude가 텍스트뿐
-    아니라 스캔본·표·차트가 이미지로 박힌 페이지까지 직접 읽게 한다 — Anthropic
-    공식 document 콘텐츠 블록(별도 OCR/래스터화 코드 불필요, docs.anthropic.com
-    으로 확인한 실제 API 모양)."""
-    if not 첨부_문서_바이트:
+def _사용자_메시지_구성(
+    question: str,
+    첨부_문서_바이트: bytes | None = None,
+    첨부_이미지_바이트: bytes | None = None,
+    첨부_이미지_mime타입: str | None = None,
+):
+    """PDF/이미지를 텍스트로 미리 뽑아내는 대신 원본 그대로 첨부해, Claude가 텍스트뿐
+    아니라 스캔본·표·차트가 이미지로 박힌 페이지나 사진 속 내용까지 직접 읽게 한다 —
+    Anthropic 공식 document/image 콘텐츠 블록(별도 OCR/래스터화 코드 불필요,
+    docs.anthropic.com으로 확인한 실제 API 모양)."""
+    if not 첨부_문서_바이트 and not 첨부_이미지_바이트:
         return question
-    return [
-        {
+    블록들 = []
+    if 첨부_문서_바이트:
+        블록들.append({
             "type": "document",
             "source": {
                 "type": "base64",
                 "media_type": "application/pdf",
                 "data": base64.standard_b64encode(첨부_문서_바이트).decode("ascii"),
             },
-        },
-        {"type": "text", "text": question},
-    ]
+        })
+    if 첨부_이미지_바이트:
+        블록들.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": 첨부_이미지_mime타입 or "image/png",
+                "data": base64.standard_b64encode(첨부_이미지_바이트).decode("ascii"),
+            },
+        })
+    블록들.append({"type": "text", "text": question})
+    return 블록들
 
 
 def 조회_사업현황(
@@ -905,8 +923,10 @@ def 노트_위키_정리(내용: str, api_key: str | None = None) -> str:
 
 원본 노트:
 {내용}"""
+    # 사실을 새로 만들어내는 게 아니라 이미 있는 문장을 제목/목록으로 재배열만 하는
+    # 작업이라 깊은 추론이 필요 없다 — 대화 제목/요약 생성과 같은 경량 모델을 쓴다.
     response = client.messages.create(
-        model=MODEL_NAME, max_tokens=4096, messages=[{"role": "user", "content": 프롬프트}],
+        model=경량_MODEL_NAME, max_tokens=4096, messages=[{"role": "user", "content": 프롬프트}],
     )
     return _텍스트_추출(response).strip()
 
@@ -1106,7 +1126,7 @@ def 대화_요약_생성(기존_요약: str | None, 새_메시지들: list[dict]
     try:
         client = Anthropic(api_key=key)
         response = client.messages.create(
-            model=제목생성_MODEL_NAME, max_tokens=1024, messages=[{"role": "user", "content": 프롬프트}],
+            model=경량_MODEL_NAME, max_tokens=1024, messages=[{"role": "user", "content": 프롬프트}],
         )
         return _텍스트_추출(response).strip() or (기존_요약 or "")
     except Exception:
@@ -1130,7 +1150,7 @@ def 대화_제목_생성(첫_메시지: str, api_key: str | None = None) -> str:
     try:
         client = Anthropic(api_key=key)
         response = client.messages.create(
-            model=제목생성_MODEL_NAME,
+            model=경량_MODEL_NAME,
             max_tokens=30,
             messages=[
                 {
@@ -1187,6 +1207,8 @@ def 질의하기(
     history: list[dict] | None = None,
     api_key: str | None = None,
     첨부_문서_바이트: bytes | None = None,
+    첨부_이미지_바이트: bytes | None = None,
+    첨부_이미지_mime타입: str | None = None,
 ) -> dict:
     """자연어 질문 -> Claude가 SQLite를 조회하거나 변경을 제안하며 답변 생성
 
@@ -1194,6 +1216,8 @@ def 질의하기(
     도구 호출 내역은 이번 턴 안에서만 쓰고 반환값에는 포함하지 않는다.
     첨부_문서_바이트: PDF 원본 바이트(있으면 Claude가 텍스트+시각적 레이아웃을
     직접 읽는다 — 스캔 이미지 PDF도 대응됨).
+    첨부_이미지_바이트/첨부_이미지_mime타입: 사진·스크린샷 등 이미지 원본(있으면 Claude가
+    네이티브 비전으로 직접 본다).
 
     반환값: {"text": 답변 문자열, "pending_action": {"유형": 도구명, "인자": {...}} 또는 None,
     "질문_대기": {"질문": ..., "선택지": [...]} 또는 None}
@@ -1216,7 +1240,12 @@ def 질의하기(
 
     client = Anthropic(api_key=key)
     messages = list(history or []) + [
-        {"role": "user", "content": _사용자_메시지_구성(question, 첨부_문서_바이트)}
+        {
+            "role": "user",
+            "content": _사용자_메시지_구성(
+                question, 첨부_문서_바이트, 첨부_이미지_바이트, 첨부_이미지_mime타입
+            ),
+        }
     ]
     system_prompt = _시스템_프롬프트_구성()
 
@@ -1273,6 +1302,8 @@ def 질의하기_스트림(
     history: list[dict] | None = None,
     api_key: str | None = None,
     첨부_문서_바이트: bytes | None = None,
+    첨부_이미지_바이트: bytes | None = None,
+    첨부_이미지_mime타입: str | None = None,
 ):
     """질의하기()의 스트리밍 버전 — FastAPI SSE 엔드포인트 전용.
 
@@ -1282,6 +1313,7 @@ def 질의하기_스트림(
     맞췄다 — 다만 생성된_파일/질문_대기는 스트리밍 전용 필드). tool_use 루프 로직은 질의하기()와
     동일 — 브라우저가 받은 토큰이 아니라 stream.get_final_message()만 신뢰해서 도구 호출을 판단한다.
     첨부_문서_바이트: PDF 원본 바이트(질의하기()와 동일 — 스캔 이미지 PDF도 대응됨).
+    첨부_이미지_바이트/첨부_이미지_mime타입: 사진·스크린샷 등 이미지 원본(질의하기()와 동일).
     질문_대기: ask_clarifying_question이 호출되면 {"질문": ..., "선택지": [...]}로 채워지고,
     그 즉시 턴이 끝난다(추가 도구 호출/텍스트 생성 없음) — create_file과 같은 특수 처리 패턴.
     """
@@ -1298,7 +1330,12 @@ def 질의하기_스트림(
 
     client = Anthropic(api_key=key)
     messages = list(history or []) + [
-        {"role": "user", "content": _사용자_메시지_구성(question, 첨부_문서_바이트)}
+        {
+            "role": "user",
+            "content": _사용자_메시지_구성(
+                question, 첨부_문서_바이트, 첨부_이미지_바이트, 첨부_이미지_mime타입
+            ),
+        }
     ]
     system_prompt = _시스템_프롬프트_구성()
 
