@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -82,8 +82,8 @@ def 회원가입(요청: 회원가입_요청, response: Response):
     이름 = 요청.이름.strip()
     if not 이름:
         raise HTTPException(status_code=400, detail="이름을 입력해주세요.")
-    if len(요청.비밀번호) < 4:
-        raise HTTPException(status_code=400, detail="비밀번호는 4자 이상이어야 합니다.")
+    if len(요청.비밀번호) < 8:
+        raise HTTPException(status_code=400, detail="비밀번호는 8자 이상이어야 합니다.")
     try:
         사용자_id = repo.계정_생성(이름, auth.비밀번호_해시(요청.비밀번호))
     except sqlite3.IntegrityError:
@@ -92,11 +92,19 @@ def 회원가입(요청: 회원가입_요청, response: Response):
     return {"ok": True, "이름": 이름}
 
 
+def _클라이언트_키(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 @app.post("/api/login")
-def 로그인(요청: 로그인_요청, response: Response):
+def 로그인(요청: 로그인_요청, request: Request, response: Response):
+    키 = _클라이언트_키(request)
+    auth.로그인_시도_확인(키)
     계정 = repo.계정_이름으로_조회(요청.이름.strip())
     if not 계정 or not auth.비밀번호_검증(요청.비밀번호, 계정["비밀번호_해시"]):
+        auth.로그인_시도_기록(키)
         raise HTTPException(status_code=401, detail="이름 또는 비밀번호가 올바르지 않습니다.")
+    auth.로그인_성공_초기화(키)
     _세션_쿠키_설정(response, 계정["id"], 계정["이름"])
     return {"ok": True, "이름": 계정["이름"]}
 
@@ -227,10 +235,17 @@ _미리보기_가능_mime타입 = {
 
 
 @app.get("/api/files/{file_id}")
-def 생성파일_다운로드(file_id: int, _인증: None = Depends(_인증_확인)):
+def 생성파일_다운로드(file_id: int, 사용자: dict = Depends(auth.현재_사용자)):
     파일 = repo.생성파일_불러오기(file_id)
     if not 파일:
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    # 로그인만 확인하고 소유권은 안 보면 file_id를 순차 대입해 남의 파일을 받을 수 있다 —
+    # chat.py의 _소유권_확인과 같은 판정(대화_id가 없거나 대화가 이미 삭제된 경우,
+    # 또는 계정 도입 이전 사용자_id NULL 레거시 대화는 그대로 열어둔다).
+    if 파일["대화_id"] is not None:
+        대화 = repo.대화_조회(파일["대화_id"])
+        if 대화 and 대화["사용자_id"] is not None and 대화["사용자_id"] != 사용자["id"]:
+            raise HTTPException(status_code=403, detail="다른 계정의 파일입니다.")
     # 파일명이 한글일 수 있어 RFC 5987(filename*=UTF-8''...)로 인코딩 — 그냥 filename=만 쓰면
     # 브라우저/프록시에 따라 비ASCII 문자가 깨질 수 있다.
     인코딩된_파일명 = quote(파일["파일명"])

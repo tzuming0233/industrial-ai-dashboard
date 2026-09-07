@@ -705,6 +705,7 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
                 className="btn btn-secondary"
                 onClick={() => set삭제확인(true)}
                 title="노트 삭제"
+                aria-label={`'${선택된_노트.제목 || '제목 없음'}' 노트 삭제`}
               >
                 <Icon name="trash" size={15} />
               </button>
@@ -857,6 +858,7 @@ export default function Notes({ 데이터_갱신_신호 }: Props) {
                     type="button"
                     className="btn btn-secondary notes-format-btn"
                     title="이미지/파일 첨부"
+                    aria-label="이미지/파일 첨부"
                     disabled={첨부중}
                     onClick={() => 파일input_ref.current?.click()}
                   >

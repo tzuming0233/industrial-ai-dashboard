@@ -118,6 +118,8 @@ def 채팅_DB_준비():
         # 억지로 귀속시키지 않고, 조회 시 "누구에게나 보이는 레거시 대화"로 취급한다.
         if "사용자_id" not in 기존_대화_컬럼:
             conn.execute("ALTER TABLE 대화 ADD COLUMN 사용자_id INTEGER")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_채팅기록_대화_id ON 채팅기록 (대화_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_대화_사용자_id ON 대화 (사용자_id)")
         conn.commit()
     finally:
         conn.close()
@@ -247,6 +249,7 @@ def 투입인력_DB_준비():
             )
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_투입인력_사업_id ON 투입인력 (사업_id)")
         conn.commit()
     finally:
         conn.close()
@@ -299,6 +302,7 @@ def 이력_DB_준비():
             )
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_이력_사업_id ON 이력 (사업_id)")
         conn.commit()
     finally:
         conn.close()
@@ -336,6 +340,14 @@ def 온톨로지_DB_준비():
         기존_노드_컬럼 = {row[1] for row in conn.execute("PRAGMA table_info(온톨로지_노드)")}
         if "노트_id" not in 기존_노드_컬럼:
             conn.execute("ALTER TABLE 온톨로지_노드 ADD COLUMN 노트_id INTEGER")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_온톨로지_노드_사업_id ON 온톨로지_노드 (사업_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_온톨로지_노드_노트_id ON 온톨로지_노드 (노트_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_온톨로지_관계_출발_노드_id ON 온톨로지_관계 (출발_노드_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_온톨로지_관계_도착_노드_id ON 온톨로지_관계 (도착_노드_id)"
+        )
         conn.commit()
     finally:
         conn.close()
@@ -422,6 +434,84 @@ def 사업현황_저장(편집_df: pd.DataFrame, 원본_df: pd.DataFrame, 작성
                     set절 = ", ".join(f"{c} = ?" for c in 나머지_컬럼)
                     conn.execute(f"UPDATE 사업현황 SET {set절} WHERE id = ?", 값들 + [id_])
                     _이력_저장(conn, id_, 사업명, "수정", "; ".join(변경내용), 작성자)
+        conn.commit()
+    finally:
+        conn.close()
+    사업현황_불러오기.clear()
+    전체_이력_불러오기.clear()
+
+
+# ---------- 사업현황 단일 행 전용 함수 ----------
+# 사업현황_저장()은 "데이터 관리" 탭의 스프레드시트 편집처럼 전체 테이블을 diff해서
+# 삭제까지 감지해야 하는 벌크 편집에 맞춰져 있다 — id 하나가 편집_df에 없으면 삭제로
+# 간주하므로 부분 목록을 넘길 수 없고, 매번 원본_df.iterrows()로 전체를 훑는다. AI 제안
+# (propose_add/update/delete_business)은 항상 딱 한 행만 바뀌는데도 매번 이 전체 diff를
+# 태워야 했다 — 아래 세 함수는 그 경우만을 위한 경량 경로로, 전체 테이블을 안 읽고 해당
+# 행만 INSERT/UPDATE/DELETE + 이력 기록한다. 데이터 관리 탭/사업현황_저장은 그대로 둔다.
+
+
+def 사업현황_행_추가(값: dict, 작성자: str = "") -> int:
+    나머지_컬럼 = [c for c in 편집_컬럼순서 if c != "id"]
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        값들 = [_sqlite호환값(값.get(c)) for c in 나머지_컬럼]
+        cur = conn.execute(
+            f"INSERT INTO 사업현황 ({', '.join(나머지_컬럼)}) VALUES ({', '.join(['?'] * len(나머지_컬럼))})",
+            값들,
+        )
+        사업명 = f"{값.get('업체명', '')} · {값.get('용역명', '')}"
+        _이력_저장(conn, cur.lastrowid, 사업명, "추가", "신규 사업이 등록되었습니다.", 작성자)
+        conn.commit()
+        새_id = cur.lastrowid
+    finally:
+        conn.close()
+    사업현황_불러오기.clear()
+    전체_이력_불러오기.clear()
+    return 새_id
+
+
+def 사업현황_행_수정(id_: int, 변경필드: dict, 작성자: str = "") -> None:
+    나머지_컬럼 = [c for c in 편집_컬럼순서 if c != "id"]
+    반영할_필드 = {k: v for k, v in 변경필드.items() if k in 나머지_컬럼}
+    if not 반영할_필드:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        기존행 = conn.execute(
+            f"SELECT {', '.join(나머지_컬럼)} FROM 사업현황 WHERE id = ?", (int(id_),)
+        ).fetchone()
+        if 기존행 is None:
+            return
+        기존_맵 = dict(zip(나머지_컬럼, 기존행))
+        변경내용, set절_컬럼, 값들 = [], [], []
+        for 컬럼, 새값 in 반영할_필드.items():
+            이전값 = _sqlite호환값(기존_맵.get(컬럼))
+            새값 = _sqlite호환값(새값)
+            if 이전값 != 새값:
+                변경내용.append(f"{컬럼}: {이전값} → {새값}")
+                set절_컬럼.append(컬럼)
+                값들.append(새값)
+        if not 변경내용:
+            return
+        set절 = ", ".join(f"{c} = ?" for c in set절_컬럼)
+        conn.execute(f"UPDATE 사업현황 SET {set절} WHERE id = ?", 값들 + [int(id_)])
+        사업명 = f"{기존_맵.get('업체명', '')} · {기존_맵.get('용역명', '')}"
+        _이력_저장(conn, id_, 사업명, "수정", "; ".join(변경내용), 작성자)
+        conn.commit()
+    finally:
+        conn.close()
+    사업현황_불러오기.clear()
+    전체_이력_불러오기.clear()
+
+
+def 사업현황_행_삭제(id_: int, 작성자: str = "") -> None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        원본행 = conn.execute("SELECT 업체명, 용역명 FROM 사업현황 WHERE id = ?", (int(id_),)).fetchone()
+        if 원본행 is None:
+            return
+        conn.execute("DELETE FROM 사업현황 WHERE id = ?", (int(id_),))
+        _이력_저장(conn, id_, f"{원본행[0]} · {원본행[1]}", "삭제", "사업이 삭제되었습니다.", 작성자)
         conn.commit()
     finally:
         conn.close()
@@ -894,6 +984,7 @@ def 노트_DB_준비():
             )
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_노트_버전_노트_id ON 노트_버전 (노트_id)")
         conn.commit()
     finally:
         conn.close()
@@ -1136,7 +1227,7 @@ def 생성파일_불러오기(파일_id: int) -> dict | None:
     try:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT id, 파일명, mime타입, 내용 FROM 생성파일 WHERE id = ?", (int(파일_id),)
+            "SELECT id, 대화_id, 파일명, mime타입, 내용 FROM 생성파일 WHERE id = ?", (int(파일_id),)
         ).fetchone()
         return dict(row) if row else None
     finally:

@@ -363,6 +363,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming}
             title="파일 첨부"
+            aria-label="파일 첨부"
           >
             <Icon name="paperclip" size={16} />
           </button>
@@ -373,6 +374,8 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
               onClick={음성_토글}
               disabled={isStreaming}
               title={듣는중 ? '음성 입력 중지' : '음성으로 입력'}
+              aria-label={듣는중 ? '음성 입력 중지' : '음성으로 입력'}
+              aria-pressed={듣는중}
             >
               <Icon name="mic" size={16} />
             </button>
@@ -384,7 +387,13 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             onChange={(e) => setInputText(e.target.value)}
             disabled={isStreaming}
           />
-          <button className="btn btn-primary send-btn" type="submit" disabled={isStreaming} title="전송">
+          <button
+            className="btn btn-primary send-btn"
+            type="submit"
+            disabled={isStreaming}
+            title="전송"
+            aria-label="전송"
+          >
             <Icon name="send" size={16} />
           </button>
         </div>

@@ -67,7 +67,12 @@ export default function Sidebar({
         <button className="conv-row-title" onClick={() => onSelect(d.id)}>
           {d.제목 || `새 대화 (${d.생성일시.slice(0, 16)})`}
         </button>
-        <button className="conv-row-delete" title="이 대화 삭제" onClick={() => set삭제확인_id(d.id)}>
+        <button
+          className="conv-row-delete"
+          title="이 대화 삭제"
+          aria-label={`'${d.제목 || '제목 없음'}' 대화 삭제`}
+          onClick={() => set삭제확인_id(d.id)}
+        >
           <Icon name="trash" size={14} />
         </button>
       </div>

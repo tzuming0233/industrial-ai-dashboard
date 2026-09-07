@@ -303,7 +303,12 @@ export default function DataManagement({ 데이터_갱신_신호 }: Props) {
                   />
                 </td>
                 <td>
-                  <button className="btn btn-secondary" onClick={() => 행_삭제(idx)} title="이 행 삭제">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => 행_삭제(idx)}
+                    title="이 행 삭제"
+                    aria-label={`${`${r.업체명 || ''} ${r.용역명 || ''}`.trim() || '이 행'} 삭제`}
+                  >
                     <Icon name="trash" size={14} />
                   </button>
                 </td>

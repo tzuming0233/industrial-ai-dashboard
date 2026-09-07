@@ -231,6 +231,8 @@ function App() {
               className="chat-panel-toggle"
               onClick={() => set채팅_접힘((v) => !v)}
               title={채팅_접힘 ? 'AI 채팅 펼치기' : 'AI 채팅 접기'}
+              aria-label={채팅_접힘 ? 'AI 채팅 펼치기' : 'AI 채팅 접기'}
+              aria-expanded={!채팅_접힘}
             >
               <Icon name="chevron" size={14} />
             </button>

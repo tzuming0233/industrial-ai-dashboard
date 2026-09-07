@@ -9,6 +9,7 @@
 import hashlib
 import os
 import secrets
+import time
 
 from fastapi import Cookie, Depends, HTTPException
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -88,3 +89,28 @@ def 인증_확인(사용자: dict = Depends(현재_사용자)) -> None:
     """FastAPI Depends()로 라우트에 붙이는 공용 인증 게이트. main.py/chat.py/notes.py가
     공유한다 — 사용자 식별이 필요 없는 라우트는 그대로 이 함수만 쓰면 된다."""
     return None
+
+
+# ---------------- 로그인 무차별대입 방지 ----------------
+# chat.py의 _대기중_제안과 같은 스타일 — 새 의존성 없이 프로세스 메모리에 슬라이딩
+# 윈도우로 시도 횟수만 기록한다. 키는 보통 클라이언트 IP(+선택적으로 시도한 이름).
+_로그인_시도: dict[str, list[float]] = {}
+_로그인_시도_제한 = 5
+_로그인_시도_윈도우초 = 15 * 60
+
+
+def 로그인_시도_확인(키: str) -> None:
+    """윈도우 내 실패 횟수가 제한을 넘으면 429를 낸다. 성공/실패 판정 전에 먼저 호출."""
+    지금 = time.time()
+    기록 = [t for t in _로그인_시도.get(키, []) if 지금 - t < _로그인_시도_윈도우초]
+    _로그인_시도[키] = 기록
+    if len(기록) >= _로그인_시도_제한:
+        raise HTTPException(status_code=429, detail="로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.")
+
+
+def 로그인_시도_기록(키: str) -> None:
+    _로그인_시도.setdefault(키, []).append(time.time())
+
+
+def 로그인_성공_초기화(키: str) -> None:
+    _로그인_시도.pop(키, None)

@@ -254,22 +254,19 @@ def _제안_반영(제안: dict, 전체_df: pd.DataFrame, 작성자: str = "AI�
         반영대상_df = pd.concat([전체_df, 제안["결과_df"]], ignore_index=True)
         repo.사업현황_저장(반영대상_df, 전체_df, 작성자)
     elif 유형 == "propose_add_business":
+        # 전체_df를 이어붙여 사업현황_저장(전체 diff)을 태우는 대신, 새로 추가되는
+        # 행만 경량 함수로 하나씩 INSERT한다 — _제안_추가행들은 기본값 채우기만 재사용.
         추가_df = _제안_추가행들(인자.get("사업목록", []))
-        반영대상_df = pd.concat([전체_df, 추가_df], ignore_index=True)
-        repo.사업현황_저장(반영대상_df, 전체_df, 작성자)
+        for 행 in 추가_df.to_dict("records"):
+            repo.사업현황_행_추가(행, 작성자)
     elif 유형 == "propose_update_business":
         대상id = 인자.get("id")
         변경필드 = 인자.get("변경필드", {})
-        편집_df = 전체_df.copy()
-        마스크 = 편집_df["id"] == 대상id
-        for 필드, 새값 in 변경필드.items():
-            if 필드 in 편집_df.columns:
-                편집_df.loc[마스크, 필드] = 새값
-        repo.사업현황_저장(편집_df, 전체_df, 작성자)
+        if 대상id is not None:
+            repo.사업현황_행_수정(대상id, 변경필드, 작성자)
     elif 유형 == "propose_delete_business":
-        ids = 인자.get("ids", [])
-        편집_df = 전체_df[~전체_df["id"].isin(ids)]
-        repo.사업현황_저장(편집_df, 전체_df, 작성자)
+        for id_ in 인자.get("ids", []):
+            repo.사업현황_행_삭제(id_, 작성자)
     elif 유형 == "propose_add_relations":
         repo.온톨로지_관계_추가(인자.get("관계목록", []), 전체_df, 작성자)
     elif 유형 == "propose_delete_relations":
