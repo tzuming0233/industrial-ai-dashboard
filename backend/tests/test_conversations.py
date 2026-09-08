@@ -52,3 +52,43 @@ def test_대화_삭제_본인_소유만_가능(client):
     assert r.status_code == 200
     r = client.get(f"/api/conversations/{대화_id}/messages")
     assert r.status_code == 404
+
+
+def test_메시지_중단_시_부분_텍스트가_저장됨(client):
+    _회원가입(client, "사용자E")
+    r = client.post("/api/conversations", json={})
+    대화_id = r.json()["id"]
+
+    r = client.post(f"/api/conversations/{대화_id}/messages/stop", json={"텍스트": "생성 중이던 부분 답변"})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+    r = client.get(f"/api/conversations/{대화_id}/messages")
+    메시지들 = r.json()["메시지"]
+    assert any(m["role"] == "assistant" and m["content"] == "생성 중이던 부분 답변" for m in 메시지들)
+
+
+def test_메시지_중단_빈_텍스트는_저장_안_함(client):
+    _회원가입(client, "사용자F")
+    r = client.post("/api/conversations", json={})
+    대화_id = r.json()["id"]
+
+    r = client.post(f"/api/conversations/{대화_id}/messages/stop", json={"텍스트": "   "})
+    assert r.status_code == 200
+
+    r = client.get(f"/api/conversations/{대화_id}/messages")
+    assert r.json()["메시지"] == []
+
+
+def test_메시지_중단_다른_계정_대화는_403(temp_db):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+
+    with TestClient(app) as client_a, TestClient(app) as client_b:
+        _회원가입(client_a, "계정G")
+        r = client_a.post("/api/conversations", json={})
+        대화_id = r.json()["id"]
+
+        _회원가입(client_b, "계정H")
+        r = client_b.post(f"/api/conversations/{대화_id}/messages/stop", json={"텍스트": "몰래 저장 시도"})
+        assert r.status_code == 403

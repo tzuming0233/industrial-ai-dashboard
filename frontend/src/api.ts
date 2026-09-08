@@ -221,6 +221,14 @@ export const cancelProposal = (id: number, action_token: string) =>
     body: JSON.stringify({ action_token }),
   })
 
+// 생성 중단 버튼 — 그때까지 받은 부분 텍스트를 대화 기록에 저장시킨다(안 그러면
+// 새로고침 시 화면에서 봤던 답변이 사라짐).
+export const stopMessage = (id: number, 텍스트: string) =>
+  api<{ ok: boolean }>(`/api/conversations/${id}/messages/stop`, {
+    method: 'POST',
+    body: JSON.stringify({ 텍스트 }),
+  })
+
 export const getBusiness = () => api<사업행[]>('/api/business')
 
 export const getDashboardSummary = () => api<대시보드요약>('/api/dashboard-summary')

@@ -7,6 +7,7 @@ import {
   downloadGeneratedFile,
   fileDownloadUrl,
   getMessages,
+  stopMessage,
   streamMessage,
   type 대기중_제안,
   type 메시지,
@@ -110,6 +111,18 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // 사용자가 '중단'을 눌러 일부러 스트림을 끊은 경우, streamMessage의 onError가
+  // 이걸 진짜 네트워크 오류로 오인해 화면에 "오류: ..."를 띄우지 않도록 구분한다.
+  const 중단_중_ref = useRef(false)
+
+  // 클로드 앱처럼 여러 줄까지 자동으로 늘어나는 입력창(최대 높이는 CSS에서 캡).
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [inputText])
 
   const { 지원됨: 음성지원, 듣는중, 토글: 음성_토글 } = useSpeechRecognition((text) => {
     setInputText((prev) => (prev ? `${prev} ${text}` : text))
@@ -189,6 +202,12 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
           onActivity()
         },
         onError: (message) => {
+          if (중단_중_ref.current) {
+            // 사용자가 직접 중단한 것 — 이미 중단()에서 상태 정리를 끝냈으니
+            // 이걸 오류로 표시하지 않는다.
+            중단_중_ref.current = false
+            return
+          }
           setIsStreaming(false)
           setStreamingText('')
           setStreamingStatus(null)
@@ -205,6 +224,24 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
   function 전송(e: React.FormEvent) {
     e.preventDefault()
     보내기(inputText.trim(), attachedFile)
+  }
+
+  // 클로드 앱의 생성 중단 버튼 — 지금까지 받은 부분 텍스트를 그대로 화면에 확정하고
+  // 서버에도 저장시킨다(안 그러면 새로고침했을 때 방금 본 답변이 사라진다).
+  function 중단() {
+    중단_중_ref.current = true
+    abortRef.current?.abort()
+    const 부분_텍스트 = streamingText
+    if (부분_텍스트) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 부분_텍스트 }])
+    }
+    setIsStreaming(false)
+    setStreamingText('')
+    setStreamingStatus(null)
+    stopMessage(conversationId, 부분_텍스트).catch(() => {
+      /* 화면엔 이미 반영됐으니 저장 실패는 조용히 무시 */
+    })
+    onActivity()
   }
 
   function 선택지_클릭(label: string) {
@@ -254,6 +291,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
       )}
 
       <div className="chat-messages">
+       <div className="chat-column">
         {loading && <p className="sidebar-caption">불러오는 중...</p>}
         {!loading && messages.length === 0 && !isStreaming && (
           <p className="chat-empty-hint">
@@ -351,9 +389,11 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
 
         {error && <p className="proposal-error">오류: {error}</p>}
         <div ref={bottomRef} />
+       </div>
       </div>
 
       <form className="chat-input-row" onSubmit={전송}>
+       <div className="chat-column">
         {attachedFile && (
           <div className="attached-file-chip">
             <Icon name="paperclip" size={13} />
@@ -409,23 +449,32 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
               <Icon name="mic" size={16} />
             </button>
           )}
-          <input
+          <textarea
+            ref={textareaRef}
             className="text-input chat-text-input"
             placeholder={듣는중 ? '듣고 있어요...' : '질문을 입력하거나 파일을 첨부하세요'}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                보내기(inputText.trim(), attachedFile)
+              }
+            }}
             disabled={isStreaming}
+            rows={1}
           />
           <button
             className="btn btn-primary send-btn"
-            type="submit"
-            disabled={isStreaming}
-            title="전송"
-            aria-label="전송"
+            type={isStreaming ? 'button' : 'submit'}
+            onClick={isStreaming ? 중단 : undefined}
+            title={isStreaming ? '생성 중단' : '전송'}
+            aria-label={isStreaming ? '생성 중단' : '전송'}
           >
-            <Icon name="send" size={16} />
+            <Icon name={isStreaming ? 'stop' : 'send'} size={16} />
           </button>
         </div>
+       </div>
       </form>
     </div>
   )

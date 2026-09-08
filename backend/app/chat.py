@@ -395,6 +395,23 @@ def 제안_취소(conversation_id: int, 요청: _제안_처리_요청, 사용자
     return {"취소됨": True}
 
 
+class _중단_요청(BaseModel):
+    텍스트: str
+
+
+@router.post("/api/conversations/{conversation_id}/messages/stop")
+def 메시지_중단(conversation_id: int, 요청: _중단_요청, 사용자: dict = Depends(auth.현재_사용자)):
+    """사용자가 생성 도중 '중단'을 누르면, 그때까지 클라이언트가 받은 부분 텍스트를
+    그대로 대화 기록에 저장한다 — 안 그러면 새로고침 시 화면에서 봤던 답변이
+    사라진다. 서버가 SSE 연결이 언제 끊겼는지 감지하는 복잡한 로직 대신, 클라이언트가
+    본 그대로를 저장시키는 방식이라 단순하고 안정적이다."""
+    대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
+    if 요청.텍스트.strip():
+        repo.채팅기록_저장(대화_id, "assistant", 요청.텍스트)
+    return {"ok": True}
+
+
 # ---------------- SSE 스트리밍 메시지 전송 ----------------
 
 
