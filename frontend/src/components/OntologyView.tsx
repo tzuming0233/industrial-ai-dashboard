@@ -40,8 +40,13 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
   const [선택된_사업id, set선택된_사업id] = useState<number[]>([])
   const [필터_열림, set필터_열림] = useState(false)
   const [필터_검색어, set필터_검색어] = useState('')
+  const [필터_강조_인덱스, set필터_강조_인덱스] = useState(0)
   const [선택된_관계유형, set선택된_관계유형] = useState<string[]>([])
   const [노트_미리보기_캐시, set노트_미리보기_캐시] = useState<Record<number, 노트>>({})
+
+  const 필터_입력ref = useRef<HTMLInputElement>(null)
+  const 필터팝오버_ref = useRef<HTMLDivElement>(null)
+  const 필터버튼_ref = useRef<HTMLButtonElement>(null)
 
   const [클릭된_엣지id, set클릭된_엣지id] = useState<number | null>(null)
   const [클릭된_노드id, set클릭된_노드id] = useState<number | null>(null)
@@ -84,6 +89,40 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
     const q = 필터_검색어.trim().toLowerCase()
     return q ? 사업_라벨_목록.filter((b) => b.라벨.toLowerCase().includes(q)) : 사업_라벨_목록
   }, [사업_라벨_목록, 필터_검색어])
+
+  useEffect(() => {
+    set필터_강조_인덱스(0)
+  }, [필터_후보])
+
+  useEffect(() => {
+    if (!필터_열림) return
+    필터_입력ref.current?.focus()
+    function 바깥클릭_처리(e: MouseEvent) {
+      if (필터팝오버_ref.current && !필터팝오버_ref.current.contains(e.target as Node)) {
+        set필터_열림(false)
+      }
+    }
+    document.addEventListener('mousedown', 바깥클릭_처리)
+    return () => document.removeEventListener('mousedown', 바깥클릭_처리)
+  }, [필터_열림])
+
+  function 필터_검색_키다운(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      set필터_강조_인덱스((i) => Math.min(i + 1, 필터_후보.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      set필터_강조_인덱스((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const 대상 = 필터_후보[필터_강조_인덱스]
+      if (대상) 사업_토글(대상.id)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      set필터_열림(false)
+      필터버튼_ref.current?.focus()
+    }
+  }
 
   const 관계유형_전체목록 = useMemo(
     () => [...new Set(relations.map((r) => r.관계유형))].sort(),
@@ -243,22 +282,43 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
         <b>노드를 클릭하면 관계 추가</b>, <b>선을 클릭하면 관계 삭제</b>를 할 수 있습니다.
       </p>
 
-      <div className="project-popover-wrap">
-        <button className="btn btn-secondary" onClick={() => set필터_열림((v) => !v)}>
+      <div className="project-popover-wrap" ref={필터팝오버_ref}>
+        <button
+          ref={필터버튼_ref}
+          className="btn btn-secondary"
+          onClick={() => set필터_열림((v) => !v)}
+          aria-expanded={필터_열림}
+          aria-haspopup="listbox"
+        >
           사업 선택 필터 {선택된_사업id.length > 0 ? `(${선택된_사업id.length}건 선택됨)` : ''}
         </button>
         {필터_열림 && (
           <div className="project-popover" style={{ width: 420 }}>
             <p className="sidebar-caption">선택한 사업들 중심으로 그래프를 좁혀서 보여줍니다. 비워두면 전체 표시.</p>
             <input
+              ref={필터_입력ref}
               className="text-input"
-              placeholder="업체명·용역명 검색"
+              placeholder="업체명·용역명 검색 (↑↓로 이동, Enter로 선택)"
               value={필터_검색어}
               onChange={(e) => set필터_검색어(e.target.value)}
+              onKeyDown={필터_검색_키다운}
+              role="combobox"
+              aria-expanded
+              aria-controls="ontology-filter-listbox"
+              aria-activedescendant={
+                필터_후보[필터_강조_인덱스] ? `ontology-filter-candidate-${필터_후보[필터_강조_인덱스].id}` : undefined
+              }
             />
-            <div className="project-candidate-list">
-              {필터_후보.map((b) => (
-                <label key={b.id} className="ontology-filter-row">
+            <div className="project-candidate-list" role="listbox" id="ontology-filter-listbox">
+              {필터_후보.map((b, i) => (
+                <label
+                  key={b.id}
+                  id={`ontology-filter-candidate-${b.id}`}
+                  role="option"
+                  aria-selected={선택된_사업id.includes(b.id)}
+                  className={`ontology-filter-row ${i === 필터_강조_인덱스 ? 'project-candidate-row-active' : ''}`}
+                  onMouseEnter={() => set필터_강조_인덱스(i)}
+                >
                   <input type="checkbox" checked={선택된_사업id.includes(b.id)} onChange={() => 사업_토글(b.id)} />
                   {b.라벨}
                 </label>

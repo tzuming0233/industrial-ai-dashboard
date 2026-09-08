@@ -606,6 +606,19 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  transform-origin: top center;
+  animation: project-popover-in 0.14s ease-out;
+}
+
+@keyframes project-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .project-candidate-list {
@@ -614,12 +627,18 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  border-top: 1px solid var(--테두리색);
+  padding-top: 6px;
 }
 
 .project-candidate-row {
   text-align: left;
   background: transparent;
   border-radius: 6px;
+}
+
+.project-candidate-row-active {
+  background: var(--남색-연하게);
 }
 
 .search-input {
@@ -1559,6 +1578,7 @@
   padding: 6px 4px;
   font-size: 13px;
   cursor: pointer;
+  border-radius: 6px;
 }
 
 .ontology-reset-box {

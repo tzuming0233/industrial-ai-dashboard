@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { 대화, 사업행 } from '../api'
 import Icon from './Icon'
 
@@ -24,7 +24,12 @@ export default function Sidebar({
   const [검색어, set검색어] = useState('')
   const [프로젝트패널_열림, set프로젝트패널_열림] = useState(false)
   const [프로젝트_검색어, set프로젝트_검색어] = useState('')
+  const [강조_인덱스, set강조_인덱스] = useState(0)
   const [삭제확인_id, set삭제확인_id] = useState<number | null>(null)
+
+  const 프로젝트_입력ref = useRef<HTMLInputElement>(null)
+  const 프로젝트팝오버_ref = useRef<HTMLDivElement>(null)
+  const 프로젝트버튼_ref = useRef<HTMLButtonElement>(null)
 
   const 사업_라벨_목록 = useMemo(
     () =>
@@ -39,6 +44,49 @@ export default function Sidebar({
     const list = q ? 사업_라벨_목록.filter((b) => b.라벨.toLowerCase().includes(q)) : 사업_라벨_목록
     return list.slice(0, 30)
   }, [사업_라벨_목록, 프로젝트_검색어])
+
+  // 검색어가 바뀌어 후보 목록이 달라지면 키보드 강조 위치를 맨 위로 되돌린다.
+  useEffect(() => {
+    set강조_인덱스(0)
+  }, [프로젝트_후보])
+
+  // 팝오버가 열리면 검색창에 바로 포커스하고(커맨드 팔레트 관례), 바깥을 클릭하면 닫는다.
+  useEffect(() => {
+    if (!프로젝트패널_열림) return
+    프로젝트_입력ref.current?.focus()
+    function 바깥클릭_처리(e: MouseEvent) {
+      if (프로젝트팝오버_ref.current && !프로젝트팝오버_ref.current.contains(e.target as Node)) {
+        set프로젝트패널_열림(false)
+      }
+    }
+    document.addEventListener('mousedown', 바깥클릭_처리)
+    return () => document.removeEventListener('mousedown', 바깥클릭_처리)
+  }, [프로젝트패널_열림])
+
+  function 프로젝트_선택(id: number) {
+    onNewWithProject(id)
+    set프로젝트패널_열림(false)
+    set프로젝트_검색어('')
+    프로젝트버튼_ref.current?.focus()
+  }
+
+  function 프로젝트_검색_키다운(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      set강조_인덱스((i) => Math.min(i + 1, 프로젝트_후보.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      set강조_인덱스((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const 대상 = 프로젝트_후보[강조_인덱스]
+      if (대상) 프로젝트_선택(대상.id)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      set프로젝트패널_열림(false)
+      프로젝트버튼_ref.current?.focus()
+    }
+  }
 
   const 필터된_목록 = useMemo(() => {
     const q = 검색어.trim().toLowerCase()
@@ -86,10 +134,13 @@ export default function Sidebar({
         새 대화
       </button>
 
-      <div className="project-popover-wrap">
+      <div className="project-popover-wrap" ref={프로젝트팝오버_ref}>
         <button
+          ref={프로젝트버튼_ref}
           className="btn btn-secondary btn-block sidebar-action-btn"
           onClick={() => set프로젝트패널_열림((v) => !v)}
+          aria-expanded={프로젝트패널_열림}
+          aria-haspopup="listbox"
         >
           <Icon name="folder" size={15} />
           프로젝트로 새 대화
@@ -98,22 +149,32 @@ export default function Sidebar({
           <div className="project-popover">
             <p className="sidebar-caption">사업현황의 특정 사업에 연결된 대화를 시작합니다.</p>
             <input
+              ref={프로젝트_입력ref}
               className="text-input"
               placeholder="업체명·용역명 검색"
               value={프로젝트_검색어}
               onChange={(e) => set프로젝트_검색어(e.target.value)}
+              onKeyDown={프로젝트_검색_키다운}
+              role="combobox"
+              aria-expanded
+              aria-controls="project-candidate-listbox"
+              aria-activedescendant={
+                프로젝트_후보[강조_인덱스] ? `project-candidate-${프로젝트_후보[강조_인덱스].id}` : undefined
+              }
             />
-            <div className="project-candidate-list">
+            <div className="project-candidate-list" role="listbox" id="project-candidate-listbox">
               {프로젝트_후보.length === 0 && <p className="sidebar-caption">일치하는 사업이 없습니다.</p>}
-              {프로젝트_후보.map((b) => (
+              {프로젝트_후보.map((b, i) => (
                 <button
                   key={b.id}
-                  className="conv-row-title project-candidate-row"
-                  onClick={() => {
-                    onNewWithProject(b.id)
-                    set프로젝트패널_열림(false)
-                    set프로젝트_검색어('')
-                  }}
+                  id={`project-candidate-${b.id}`}
+                  role="option"
+                  aria-selected={i === 강조_인덱스}
+                  className={`conv-row-title project-candidate-row ${
+                    i === 강조_인덱스 ? 'project-candidate-row-active' : ''
+                  }`}
+                  onMouseEnter={() => set강조_인덱스(i)}
+                  onClick={() => 프로젝트_선택(b.id)}
                 >
                   {b.라벨 || `사업 #${b.id}`}
                 </button>
