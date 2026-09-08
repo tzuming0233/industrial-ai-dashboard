@@ -25,6 +25,14 @@ type Props = {
 
 const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp,.png,.jpg,.jpeg,.gif,.webp'
 
+// 새로고침해도 마지막에 고른 모델 그대로 유지되도록 로컬에 기억해둔다.
+const _모델_저장키 = 'kpc-chat-model'
+type 모델선택 = '기본' | '빠른'
+
+function 저장된_모델_불러오기(): 모델선택 {
+  return localStorage.getItem(_모델_저장키) === '빠른' ? '빠른' : '기본'
+}
+
 // 클로드 앱처럼 여러 줄 코드블록마다 복사 버튼을 붙인다 — 스트리밍 도중에도(코드
 // 블록 자체가 완성됐다면) 바로 눌러 복사할 수 있다.
 function 코드블록({ children }: { children?: ReactNode }) {
@@ -93,6 +101,11 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [최근_생성파일, set최근_생성파일] = useState<생성_파일 | null>(null)
   const [pendingQuestion, setPendingQuestion] = useState<명확화_질문 | null>(null)
+  const [모델, set모델] = useState<모델선택>(저장된_모델_불러오기)
+
+  useEffect(() => {
+    localStorage.setItem(_모델_저장키, 모델)
+  }, [모델])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -183,6 +196,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
         },
       },
       controller.signal,
+      모델,
     ).catch(() => {
       /* onError 핸들러가 이미 상태를 처리함 */
     })
@@ -357,6 +371,21 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             style={{ display: 'none' }}
             onChange={(e) => setAttachedFile(e.target.files?.[0] ?? null)}
           />
+          <button
+            type="button"
+            className={`btn btn-secondary model-toggle-btn ${모델 === '빠른' ? 'model-toggle-fast' : ''}`}
+            onClick={() => set모델((m) => (m === '기본' ? '빠른' : '기본'))}
+            disabled={isStreaming}
+            title={
+              모델 === '빠른'
+                ? '빠른 답변 모드 — 속도·비용은 아끼지만 복잡한 판단은 기본 모드보다 부정확할 수 있어요. 클릭하면 기본 모드로'
+                : '기본 모드 — 클릭하면 단순 조회에 적합한 빠른 답변 모드로 전환'
+            }
+            aria-pressed={모델 === '빠른'}
+          >
+            <Icon name="zap" size={14} />
+            {모델 === '빠른' ? '빠른 답변' : '기본'}
+          </button>
           <button
             type="button"
             className="btn btn-secondary attach-btn"

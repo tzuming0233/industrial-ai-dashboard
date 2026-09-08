@@ -356,10 +356,12 @@ export function streamMessage(
     onError: (message: string) => void
   },
   signal?: AbortSignal,
+  model?: string,
 ): Promise<void> {
   const form = new FormData()
   form.append('message', message)
   if (file) form.append('file', file)
+  if (model) form.append('model', model)
 
   return fetchEventSource(`${API_BASE}/api/conversations/${대화_id}/messages/stream`, {
     method: 'POST',

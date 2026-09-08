@@ -29,6 +29,19 @@ MODEL_NAME = "claude-sonnet-5"
 # 더 빠르고 저렴한 모델을 쓴다(Vertex AI의 Flash/Pro 계층 구분과 같은 개념).
 경량_MODEL_NAME = "claude-haiku-4-5-20251001"
 
+# 사용자가 채팅에서 직접 고를 수 있는 응답 모델 — "기본"이 기본값. "빠른"은 단순 조회처럼
+# 도구 판단이 크게 안 중요한 질문에서 속도·비용을 아끼려는 용도(도구 호출 판단력은
+# 기본 모델보다 떨어질 수 있음을 알고 쓰는 옵션). 전체 Opus~Haiku 스펙트럼 대신 2단계로만
+# 좁혔다 — 이 시스템은 제안/온톨로지 도구 호출이 많아 모델마다 판단력 검증 부담이 커진다.
+모델_옵션 = {"기본": MODEL_NAME, "빠른": 경량_MODEL_NAME}
+# 경량 모델(Haiku 4.5)은 adaptive thinking을 지원하지 않는다 — 실제 API 호출로 확인함
+# (400 "adaptive thinking is not supported on this model"). 기본 모델에만 켠다.
+_사고_지원_모델 = {MODEL_NAME}
+
+
+def _모델_결정(모델_선택: str | None) -> str:
+    return 모델_옵션.get(모델_선택 or "기본", MODEL_NAME)
+
 SYSTEM_PROMPT = (
     "당신은 산업AI팀 사업 통합관리 시스템의 AI 에이전트입니다. 데이터 조회/추가/수정/삭제뿐 아니라, "
     "사용자와 함께 생각하고 의사결정을 돕는 동료 역할도 합니다. "
@@ -548,6 +561,21 @@ TOOLS = [
         "cache_control": {"type": "ephemeral"},
     },
 ]
+
+
+def _도구_목록_결정(실제_모델: str) -> list:
+    """경량 모델(Haiku)은 web_search_20260209의 다이나믹 필터링(내부적으로 프로그래매틱 도구
+    호출을 씀)을 지원하지 않는다 — 실제 API 호출로 확인된 에러: "'claude-haiku-...' does not
+    support programmatic tool calling ... set allowed_callers=["direct"]". 기본 모델은 다이나믹
+    필터링 이점을 그대로 누리도록 원본 TOOLS를 쓰고, 경량 모델일 때만 web_search를 direct 호출
+    전용으로 제한한 복사본을 쓴다."""
+    if 실제_모델 in _사고_지원_모델:
+        return TOOLS
+    return [
+        {**도구, "allowed_callers": ["direct"]} if 도구.get("name") == "web_search" else 도구
+        for 도구 in TOOLS
+    ]
+
 
 제안_도구명들 = {
     "propose_add_business", "propose_update_business", "propose_delete_business", "propose_add_relations",
@@ -1209,6 +1237,7 @@ def 질의하기(
     첨부_문서_바이트: bytes | None = None,
     첨부_이미지_바이트: bytes | None = None,
     첨부_이미지_mime타입: str | None = None,
+    모델_선택: str | None = None,
 ) -> dict:
     """자연어 질문 -> Claude가 SQLite를 조회하거나 변경을 제안하며 답변 생성
 
@@ -1218,6 +1247,7 @@ def 질의하기(
     직접 읽는다 — 스캔 이미지 PDF도 대응됨).
     첨부_이미지_바이트/첨부_이미지_mime타입: 사진·스크린샷 등 이미지 원본(있으면 Claude가
     네이티브 비전으로 직접 본다).
+    모델_선택: "기본"(기본값) 또는 "빠른" — 모델_옵션 참고.
 
     반환값: {"text": 답변 문자열, "pending_action": {"유형": 도구명, "인자": {...}} 또는 None,
     "질문_대기": {"질문": ..., "선택지": [...]} 또는 None}
@@ -1248,17 +1278,20 @@ def 질의하기(
         }
     ]
     system_prompt = _시스템_프롬프트_구성()
+    실제_모델 = _모델_결정(모델_선택)
 
     대기중_제안 = None
     for _ in range(_도구_호출_반복_상한):
-        response = client.messages.create(
-            model=MODEL_NAME,
+        생성_인자 = dict(
+            model=실제_모델,
             max_tokens=_블로킹_최대_출력_토큰,
             system=system_prompt,
             messages=messages,
-            tools=TOOLS,
-            thinking={"type": "adaptive"},
+            tools=_도구_목록_결정(실제_모델),
         )
+        if 실제_모델 in _사고_지원_모델:
+            생성_인자["thinking"] = {"type": "adaptive"}
+        response = client.messages.create(**생성_인자)
 
         if response.stop_reason != "tool_use":
             텍스트 = _텍스트_추출(response)
@@ -1304,6 +1337,7 @@ def 질의하기_스트림(
     첨부_문서_바이트: bytes | None = None,
     첨부_이미지_바이트: bytes | None = None,
     첨부_이미지_mime타입: str | None = None,
+    모델_선택: str | None = None,
 ):
     """질의하기()의 스트리밍 버전 — FastAPI SSE 엔드포인트 전용.
 
@@ -1314,6 +1348,8 @@ def 질의하기_스트림(
     동일 — 브라우저가 받은 토큰이 아니라 stream.get_final_message()만 신뢰해서 도구 호출을 판단한다.
     첨부_문서_바이트: PDF 원본 바이트(질의하기()와 동일 — 스캔 이미지 PDF도 대응됨).
     첨부_이미지_바이트/첨부_이미지_mime타입: 사진·스크린샷 등 이미지 원본(질의하기()와 동일).
+    모델_선택: "기본"(기본값) 또는 "빠른" — 모델_옵션 참고. "빠른"(경량 모델)은 adaptive
+    thinking을 지원하지 않아 그 경우 thinking 파라미터 자체를 뺀다.
     질문_대기: ask_clarifying_question이 호출되면 {"질문": ..., "선택지": [...]}로 채워지고,
     그 즉시 턴이 끝난다(추가 도구 호출/텍스트 생성 없음) — create_file과 같은 특수 처리 패턴.
     """
@@ -1338,6 +1374,7 @@ def 질의하기_스트림(
         }
     ]
     system_prompt = _시스템_프롬프트_구성()
+    실제_모델 = _모델_결정(모델_선택)
 
     대기중_제안 = None
     생성된_파일 = None
@@ -1346,10 +1383,13 @@ def 질의하기_스트림(
             "type": "status",
             "text": "요청을 확인하는 중..." if 회차 == 0 else "조회 결과를 반영해서 답변을 정리하는 중...",
         }
-        with client.messages.stream(
-            model=MODEL_NAME, max_tokens=_스트리밍_최대_출력_토큰, system=system_prompt, messages=messages,
-            tools=TOOLS, thinking={"type": "adaptive"},
-        ) as stream:
+        스트림_인자 = dict(
+            model=실제_모델, max_tokens=_스트리밍_최대_출력_토큰, system=system_prompt, messages=messages,
+            tools=_도구_목록_결정(실제_모델),
+        )
+        if 실제_모델 in _사고_지원_모델:
+            스트림_인자["thinking"] = {"type": "adaptive"}
+        with client.messages.stream(**스트림_인자) as stream:
             # text_stream만 쓰면 web_search 같은 서버 도구가 실행되는 동안(같은 응답 안에서
             # 클라이언트 왕복 없이 일어남) 화면에 아무 신호도 안 뜬다. 원시 이벤트를 직접 봐서
             # server_tool_use 블록이 시작될 때도 상태 문구를 띄운다. thinking_delta는 일부러

@@ -1280,6 +1280,23 @@
   border-radius: var(--radius-lg);
 }
 
+.model-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+  height: 38px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.model-toggle-fast {
+  background: var(--남색-연하게) !important;
+  color: var(--남색-진하게) !important;
+}
+
 .attach-btn,
 .send-btn {
   display: inline-flex;

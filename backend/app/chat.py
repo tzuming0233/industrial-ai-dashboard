@@ -441,8 +441,8 @@ def _이벤트_전달(이벤트: dict):
     return _sse("status", {"message": 이벤트["text"]})
 
 
-def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list):
-    for 이벤트 in ai_agent.질의하기_스트림(프로젝트_컨텍스트 + 질문, history=API용_기록):
+def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None):
+    for 이벤트 in ai_agent.질의하기_스트림(프로젝트_컨텍스트 + 질문, history=API용_기록, 모델_선택=모델_선택):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
@@ -452,14 +452,18 @@ def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스
             )
 
 
-def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list):
+def _문서_파일_스트림(
+    대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None,
+):
     if 첨부.name.lower().endswith(".pdf"):
         # 텍스트만 미리 뽑아내는 대신 원본 PDF를 그대로 Claude에 첨부한다 —
         # 텍스트 레이어뿐 아니라 스캔본·표·차트가 이미지로 박힌 페이지까지 직접
         # 읽는다(Anthropic 공식 document 콘텐츠 블록, ai_agent._사용자_메시지_구성).
         원본_바이트 = 첨부.getvalue()
         합쳐진_질문 = 프로젝트_컨텍스트 + (질문 or f"'{첨부.name}' 문서 내용을 요약해줘.")
-        for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 첨부_문서_바이트=원본_바이트):
+        for 이벤트 in ai_agent.질의하기_스트림(
+            합쳐진_질문, history=API용_기록, 첨부_문서_바이트=원본_바이트, 모델_선택=모델_선택,
+        ):
             if 이벤트["type"] in ("token", "status"):
                 yield _이벤트_전달(이벤트)
             else:
@@ -487,7 +491,7 @@ def _문서_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_�
         f"[첨부 문서 '{첨부.name}' 내용]\n{문서_텍스트}\n\n"
         f"[사용자 질문]\n{질문 or '이 문서 내용을 요약해줘.'}"
     )
-    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록):
+    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 모델_선택=모델_선택):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
@@ -503,7 +507,9 @@ _이미지_MIME_맵 = {
 }
 
 
-def _이미지_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list):
+def _이미지_파일_스트림(
+    대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None,
+):
     # PDF와 같은 패턴 — 별도 OCR 없이 원본 이미지를 그대로 Claude에 첨부해 네이티브
     # 비전으로 직접 읽게 한다(화이트보드 사진, 명함, 스크린샷 등).
     확장자 = 첨부.name.rsplit(".", 1)[-1].lower()
@@ -512,6 +518,7 @@ def _이미지_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝�
     합쳐진_질문 = 프로젝트_컨텍스트 + (질문 or f"'{첨부.name}' 이미지 내용을 설명해줘.")
     for 이벤트 in ai_agent.질의하기_스트림(
         합쳐진_질문, history=API용_기록, 첨부_이미지_바이트=원본_바이트, 첨부_이미지_mime타입=mime타입,
+        모델_선택=모델_선택,
     ):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
@@ -522,7 +529,10 @@ def _이미지_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝�
             )
 
 
-def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 전체_df: pd.DataFrame):
+def _표_파일_스트림(
+    대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 전체_df: pd.DataFrame,
+    모델_선택: str | None = None,
+):
     원본_df = _업로드_원본_읽기(첨부)
     if 원본_df.empty:
         yield from _마무리(대화_id, "첨부된 파일에서 데이터를 찾지 못했습니다.", None)
@@ -541,7 +551,7 @@ def _표_파일_스트림(대화_id: int, 첨부, 질문: str, 프로젝트_컨�
     제안 = None
     생성된_파일 = None
     질문_대기 = None
-    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록):
+    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 모델_선택=모델_선택):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
@@ -571,11 +581,13 @@ async def 메시지_스트림(
     conversation_id: int,
     message: str = Form(""),
     file: UploadFile | None = File(None),
+    model: str = Form("기본"),
     사용자: dict = Depends(auth.현재_사용자),
 ):
     대화_id = conversation_id
     _소유권_확인(대화_id, 사용자["id"])
     질문 = (message or "").strip()
+    모델_선택 = model if model in ai_agent.모델_옵션 else "기본"
     첨부 = None
     if file is not None and file.filename:
         내용 = await file.read()
@@ -606,13 +618,19 @@ async def 메시지_스트림(
     def 이벤트_스트림():
         try:
             if 표_파일:
-                yield from _표_파일_스트림(대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 전체_df)
+                yield from _표_파일_스트림(
+                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 전체_df, 모델_선택=모델_선택,
+                )
             elif 문서_파일:
-                yield from _문서_파일_스트림(대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록)
+                yield from _문서_파일_스트림(
+                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택,
+                )
             elif 이미지_파일:
-                yield from _이미지_파일_스트림(대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록)
+                yield from _이미지_파일_스트림(
+                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택,
+                )
             elif 질문:
-                yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록)
+                yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택)
             else:
                 yield _sse("done", {"text": "", "제안": None, "action_token": None})
         except Exception as e:
