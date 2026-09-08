@@ -12,6 +12,15 @@ type Props = {
   onDelete: (id: number) => void
 }
 
+// 백엔드가 주는 생성일시는 타임존 없는 naive ISO 문자열(예: "2026-09-08T05:14:00")이라
+// new Date()가 로컬 타임존으로 그대로 해석한다 — 서버/브라우저 모두 KST 기준이라 문제없다.
+// 그대로 노출하면 "2026-09-08T05:14"처럼 원시 포맷이 보이므로 사람이 읽기 좋게 바꾼다.
+function 생성일시_표시(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export default function Sidebar({
   conversations,
   currentId,
@@ -113,7 +122,7 @@ export default function Sidebar({
     return (
       <div key={d.id} className={`conv-row ${선택됨 ? 'conv-row-active' : ''}`}>
         <button className="conv-row-title" onClick={() => onSelect(d.id)}>
-          {d.제목 || `새 대화 (${d.생성일시.slice(0, 16)})`}
+          {d.제목 || `새 대화 (${생성일시_표시(d.생성일시)})`}
         </button>
         <button
           className="conv-row-delete"

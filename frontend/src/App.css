@@ -297,6 +297,13 @@
   font-weight: 600;
 }
 
+/* 아직 값이 없어 안내 문구만 보여줄 때("목표 미설정" 등) — 실제 수치와 굵기·색을
+   달리해서 한눈에 "빈 상태"로 구분되게 한다. */
+.metric-value-muted {
+  color: var(--보조텍스트색);
+  font-weight: 500;
+}
+
 .chart-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -304,12 +311,24 @@
 }
 
 .chart-box {
+  display: flex;
+  flex-direction: column;
   background: var(--카드-배경);
   box-shadow: var(--카드-그림자);
   border-radius: var(--radius-lg);
-  padding: 8px;
+  padding: 12px 8px 8px;
   height: 320px;
   transition: box-shadow 0.15s ease;
+}
+
+/* Plotly의 자체 title 대신 이 헤더를 쓴다 — 앱 타이포와 맞추기 위함(재량 없이 Plotly
+   기본 제목 폰트/여백을 그대로 쓰면 카드 안에서 튀어 보인다). */
+.chart-title {
+  margin: 0 0 4px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--본문색);
+  flex-shrink: 0;
 }
 
 .chart-box:hover {

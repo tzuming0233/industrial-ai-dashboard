@@ -92,6 +92,7 @@ export default function RevenueTable() {
 
       {총계약금액 > 0 && (
         <div className="chart-box chart-box-full">
+          <h3 className="chart-title">사업구분별 수금 현황 (기수입 vs 미수금)</h3>
           <Plot
             data={[
               {
@@ -113,12 +114,12 @@ export default function RevenueTable() {
             ]}
             layout={{
               ...차트_공통레이아웃(true),
-              title: { text: '사업구분별 수금 현황 (기수입 vs 미수금)' },
               barmode: 'stack',
               height: Math.max(280, 사업구분별_재무.length * 34),
+              yaxis: { ...차트_공통레이아웃(true).yaxis, showgrid: false },
             }}
             config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }}
           />
         </div>
       )}

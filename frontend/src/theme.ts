@@ -55,6 +55,8 @@ export function 단조_색상맵(고유값들: string[]): Record<string, string>
   return 맵
 }
 
+// 제목은 Plotly layout.title 대신 .chart-box 안의 커스텀 <h3>가 맡으므로, 상단
+// 여백(t)은 제목 공간이 아니라 그냥 숨쉴 틈만 남긴다.
 export function 차트_공통레이아웃(showlegend = false) {
   return {
     paper_bgcolor: 'rgba(0,0,0,0)',
@@ -62,9 +64,16 @@ export function 차트_공통레이아웃(showlegend = false) {
     font: { color: 본문색, family: 'Pretendard, Segoe UI, Malgun Gothic, sans-serif', size: 12 },
     // margin은 최소값일 뿐 — automargin이 긴 한글 라벨(사업구분/담당자/사업명 등)에 맞춰
     // 실제 여백을 늘려준다. automargin 없이는 Plotly가 라벨을 잘라버린다.
-    margin: { l: 40, r: 20, t: 40, b: 40 },
+    margin: { l: 40, r: 20, t: 12, b: 40 },
     showlegend,
-    xaxis: { gridcolor: 차트_격자색, zerolinecolor: 차트_격자색, automargin: true },
-    yaxis: { gridcolor: 차트_격자색, zerolinecolor: 차트_격자색, automargin: true },
+    // bargap을 넉넉히 줘서 막대가 슬롯을 꽉 채우지 않고 얇게(≈24px 이하) 나오게 한다 —
+    // 기존엔 이 값이 없어 Plotly 기본 비율대로 막대가 두껍고 무거워 보였다.
+    bargap: 0.5,
+    xaxis: {
+      gridcolor: 차트_격자색, zerolinecolor: 차트_격자색, automargin: true, showline: false,
+    },
+    yaxis: {
+      gridcolor: 차트_격자색, zerolinecolor: 차트_격자색, automargin: true, showline: false,
+    },
   }
 }

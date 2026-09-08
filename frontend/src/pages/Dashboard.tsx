@@ -3,7 +3,7 @@ import Plot from 'react-plotly.js'
 import { getDashboardSummary, type 대시보드요약 } from '../api'
 import MetricCard from '../components/MetricCard'
 import StatusBadge from '../components/StatusBadge'
-import { 단조_색상맵, 상태_차트_색상, 전기블루, 차트_공통레이아웃, 사업단계_옵션 } from '../theme'
+import { 단조_색상맵, 보조텍스트색, 상태_차트_색상, 전기블루, 차트_공통레이아웃, 사업단계_옵션 } from '../theme'
 
 export default function Dashboard() {
   const [data, setData] = useState<대시보드요약 | null>(null)
@@ -86,17 +86,25 @@ export default function Dashboard() {
           label={`${data.올해_목표.연도}년 매출 달성률`}
           value={data.올해_목표.매출_달성률 !== null ? `${data.올해_목표.매출_달성률.toFixed(1)}%` : '목표 미설정'}
           icon="chart"
+          muted={data.올해_목표.매출_달성률 === null}
           help={
             data.올해_목표.목표매출
               ? `실적 ${data.올해_목표.실적_매출.toLocaleString()}원 / 목표 ${data.올해_목표.목표매출.toLocaleString()}원`
               : undefined
           }
         />
-        <MetricCard label={`${data.올해_목표.연도}년 손익 달성률`} value="데이터 없음" icon="chart" help="원가/비용 데이터가 아직 없어 계산할 수 없습니다." />
+        <MetricCard
+          label={`${data.올해_목표.연도}년 손익 달성률`}
+          value="데이터 없음"
+          icon="chart"
+          muted
+          help="원가/비용 데이터가 아직 없어 계산할 수 없습니다."
+        />
       </div>
 
       <div className="chart-row">
         <div className="chart-box">
+          <h3 className="chart-title">사업구분별 건수</h3>
           <Plot
             data={[
               {
@@ -106,15 +114,21 @@ export default function Dashboard() {
                 y: data.사업구분별_건수.map((d) => String(d.사업구분)).reverse(),
                 text: data.사업구분별_건수.map((d) => String(d.건수)).reverse(),
                 textposition: 'outside',
+                textfont: { color: 보조텍스트색, size: 11 },
                 marker: { color: 전기블루 },
               },
             ]}
-            layout={{ ...차트_공통레이아웃(), title: { text: '사업구분별 건수' }, height: 300 }}
+            layout={{
+              ...차트_공통레이아웃(),
+              height: 260,
+              yaxis: { ...차트_공통레이아웃().yaxis, showgrid: false },
+            }}
             config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }}
           />
         </div>
         <div className="chart-box">
+          <h3 className="chart-title">구분(신규/이월)별 건수</h3>
           <Plot
             data={data.구분별_건수.map((d) => ({
               type: 'bar',
@@ -122,16 +136,22 @@ export default function Dashboard() {
               y: [d.건수],
               text: [String(d.건수)],
               textposition: 'outside',
+              textfont: { color: 보조텍스트색, size: 11 },
               marker: { color: 구분_색상맵[String(d.구분)] },
               name: String(d.구분),
               showlegend: false,
             }))}
-            layout={{ ...차트_공통레이아웃(false), title: { text: '구분(신규/이월)별 건수' }, height: 300 }}
+            layout={{
+              ...차트_공통레이아웃(false),
+              height: 260,
+              xaxis: { ...차트_공통레이아웃(false).xaxis, showgrid: false },
+            }}
             config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }}
           />
         </div>
         <div className="chart-box">
+          <h3 className="chart-title">사업단계별 건수</h3>
           <Plot
             data={사업단계_옵션.map((단계) => {
               const 항목 = data.사업단계별_건수.find((d) => d.사업단계 === 단계)
@@ -141,6 +161,7 @@ export default function Dashboard() {
                 y: [항목?.건수 ?? 0],
                 text: [String(항목?.건수 ?? 0)],
                 textposition: 'outside' as const,
+                textfont: { color: 보조텍스트색, size: 11 },
                 marker: { color: 상태_차트_색상[단계] },
                 name: 단계,
                 showlegend: false,
@@ -148,18 +169,18 @@ export default function Dashboard() {
             })}
             layout={{
               ...차트_공통레이아웃(false),
-              title: { text: '사업단계별 건수' },
-              height: 300,
-              xaxis: { ...차트_공통레이아웃(false).xaxis, tickangle: -20 },
+              height: 260,
+              xaxis: { ...차트_공통레이아웃(false).xaxis, tickangle: -20, showgrid: false },
             }}
             config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }}
           />
         </div>
       </div>
 
       {data.담당자별_건수.length > 0 && (
         <div className="chart-box chart-box-full">
+          <h3 className="chart-title">담당자(PM)별 투입 건수</h3>
           <Plot
             data={[
               {
@@ -169,16 +190,17 @@ export default function Dashboard() {
                 y: [...data.담당자별_건수].reverse().map((d) => String(d.담당자)),
                 text: [...data.담당자별_건수].reverse().map((d) => String(d.건수)),
                 textposition: 'outside',
+                textfont: { color: 보조텍스트색, size: 11 },
                 marker: { color: 전기블루 },
               },
             ]}
             layout={{
               ...차트_공통레이아웃(),
-              title: { text: '담당자(PM)별 투입 건수' },
               height: Math.max(300, data.담당자별_건수.length * 32),
+              yaxis: { ...차트_공통레이아웃().yaxis, showgrid: false },
             }}
             config={{ displayModeBar: false, responsive: true }}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }}
           />
         </div>
       )}
