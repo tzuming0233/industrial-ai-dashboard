@@ -25,6 +25,7 @@ export type IconName =
   | 'check'
   | 'zap'
   | 'stop'
+  | 'refresh'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -84,6 +85,14 @@ const paths: Record<IconName, ReactNode> = {
   // 생성 중단 버튼용 — 정지 아이콘은 관례상 윤곽선이 아니라 채워진 사각형이라
   // 부모 svg의 fill="none"을 이 요소에서만 명시적으로 덮어쓴다.
   stop: <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />,
+  refresh: (
+    <>
+      <path d="M4 12a8 8 0 0 1 14-5.3L20 8" />
+      <path d="M20 4v4h-4" />
+      <path d="M20 12a8 8 0 0 1-14 5.3L4 16" />
+      <path d="M4 20v-4h4" />
+    </>
+  ),
 }
 
 export default function Icon({ name, size = 16 }: { name: IconName; size?: number }) {

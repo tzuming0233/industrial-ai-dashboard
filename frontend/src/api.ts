@@ -392,3 +392,41 @@ export function streamMessage(
     },
   })
 }
+
+// 클로드 앱의 '재생성' 버튼 — streamMessage와 이벤트 처리는 완전히 같고, 새
+// 사용자 메시지를 보내지 않는다는 점만 다르다(서버가 마지막 질문을 재사용).
+export function retryMessage(
+  대화_id: number,
+  handlers: {
+    onToken: (text: string) => void
+    onStatus?: (message: string) => void
+    onDone: (data: 스트림_done) => void
+    onError: (message: string) => void
+  },
+  signal?: AbortSignal,
+  model?: string,
+): Promise<void> {
+  const form = new FormData()
+  if (model) form.append('model', model)
+
+  return fetchEventSource(`${API_BASE}/api/conversations/${대화_id}/messages/retry`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+    openWhenHidden: true,
+    signal,
+    async onopen(res) {
+      if (!res.ok) throw new Error(`서버 응답 오류: ${res.status}`)
+    },
+    onmessage(ev) {
+      if (ev.event === 'token') handlers.onToken((JSON.parse(ev.data) as { text: string }).text)
+      else if (ev.event === 'status') handlers.onStatus?.((JSON.parse(ev.data) as { message: string }).message)
+      else if (ev.event === 'done') handlers.onDone(JSON.parse(ev.data) as 스트림_done)
+      else if (ev.event === 'error') handlers.onError((JSON.parse(ev.data) as { message: string }).message)
+    },
+    onerror(err) {
+      handlers.onError(err instanceof Error ? err.message : String(err))
+      throw err
+    },
+  })
+}

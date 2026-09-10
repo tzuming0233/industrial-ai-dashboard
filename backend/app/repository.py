@@ -645,6 +645,21 @@ def 채팅기록_불러오기(대화_id: int) -> list[dict]:
         conn.close()
 
 
+def 채팅기록_마지막_삭제(대화_id: int) -> None:
+    """가장 최근 메시지 1개를 지운다 — 응답 재생성(retry) 시 이전 답변을 지우고
+    같은 질문으로 다시 받기 위해 쓴다."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "DELETE FROM 채팅기록 WHERE id = "
+            "(SELECT id FROM 채팅기록 WHERE 대화_id = ? ORDER BY id DESC LIMIT 1)",
+            (대화_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def 채팅기록_저장(대화_id: int, role: str, content: str) -> None:
     conn = sqlite3.connect(DB_PATH)
     try:

@@ -658,3 +658,41 @@ async def 메시지_스트림(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/api/conversations/{conversation_id}/messages/retry")
+async def 메시지_재생성(
+    conversation_id: int, model: str = Form("기본"), 사용자: dict = Depends(auth.현재_사용자),
+):
+    """클로드 앱의 '재생성' 버튼 — 마지막 답변을 지우고 그 직전 질문으로 다시
+    답변을 받는다. 새 사용자 메시지는 저장하지 않는다(이미 있던 질문 재사용)."""
+    대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
+    모델_선택 = model if model in ai_agent.모델_옵션 else "기본"
+
+    기록 = repo.채팅기록_불러오기(대화_id)
+    if not 기록 or 기록[-1]["role"] != "assistant":
+        raise HTTPException(status_code=400, detail="재생성할 답변이 없습니다.")
+    repo.채팅기록_마지막_삭제(대화_id)
+    기록 = 기록[:-1]
+    if not 기록 or 기록[-1]["role"] != "user":
+        raise HTTPException(status_code=400, detail="다시 물어볼 질문을 찾을 수 없습니다.")
+    질문 = 기록[-1]["content"]
+
+    전체_df = repo.사업현황_불러오기()
+    현재_대화 = repo.대화_조회(대화_id)
+    연결된_사업_id = 현재_대화.get("사업_id") if 현재_대화 else None
+    프로젝트_컨텍스트 = _프로젝트_컨텍스트(연결된_사업_id, 전체_df)
+    API용_기록 = _API용_기록_구성(대화_id, 기록[:-1])
+
+    def 이벤트_스트림():
+        try:
+            yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택)
+        except Exception as e:
+            yield _sse("error", {"message": str(e)})
+
+    return StreamingResponse(
+        이벤트_스트림(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

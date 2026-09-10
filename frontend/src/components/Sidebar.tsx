@@ -21,6 +21,23 @@ function 생성일시_표시(iso: string): string {
   return d.toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+// 클로드 앱 사이드바처럼 "오늘/어제/지난 7일/이전"으로 나눈다 — 프로젝트에 안 묶인
+// 일반 대화에만 적용(프로젝트별 그룹이 더 유용한 분류라 그건 그대로 둔다).
+const _날짜_버킷_순서 = ['오늘', '어제', '지난 7일', '이전'] as const
+type 날짜버킷 = (typeof _날짜_버킷_순서)[number]
+
+function 날짜_버킷(iso: string): 날짜버킷 {
+  const d = new Date(iso)
+  d.setHours(0, 0, 0, 0)
+  const 오늘 = new Date()
+  오늘.setHours(0, 0, 0, 0)
+  const 일차 = Math.round((오늘.getTime() - d.getTime()) / 86400000)
+  if (일차 <= 0) return '오늘'
+  if (일차 === 1) return '어제'
+  if (일차 <= 7) return '지난 7일'
+  return '이전'
+}
+
 export default function Sidebar({
   conversations,
   currentId,
@@ -116,6 +133,16 @@ export default function Sidebar({
     }
     return { 프로젝트별, 일반 }
   }, [필터된_목록])
+
+  const 일반_날짜별 = useMemo(() => {
+    const 맵 = new Map<날짜버킷, 대화[]>()
+    for (const c of 일반) {
+      const 버킷 = 날짜_버킷(c.마지막_활동일시)
+      if (!맵.has(버킷)) 맵.set(버킷, [])
+      맵.get(버킷)!.push(c)
+    }
+    return 맵
+  }, [일반])
 
   function 대화_행(d: 대화) {
     const 선택됨 = d.id === currentId
@@ -218,12 +245,16 @@ export default function Sidebar({
             </div>
           )
         })}
-        {일반.length > 0 && (
-          <div className="conv-group">
-            {프로젝트별.size > 0 && <p className="conv-group-label">일반 대화</p>}
-            {일반.map(대화_행)}
-          </div>
-        )}
+        {_날짜_버킷_순서.map((버킷) => {
+          const 목록 = 일반_날짜별.get(버킷)
+          if (!목록 || 목록.length === 0) return null
+          return (
+            <div key={버킷} className="conv-group">
+              <p className="conv-group-label">{버킷}</p>
+              {목록.map(대화_행)}
+            </div>
+          )
+        })}
       </div>
 
       {삭제확인_id !== null && (

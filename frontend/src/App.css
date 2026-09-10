@@ -778,16 +778,67 @@
 
 .chat-messages .chat-column {
   gap: 12px;
+  /* 대화가 비어 스크롤 컨테이너 높이만큼 안 채워질 때도 .chat-hero의
+     margin:auto가 세로로 가운데 정렬될 수 있게 최소 높이를 확보한다. */
+  min-height: 100%;
 }
 
 .chat-input-row .chat-column {
   gap: 8px;
 }
 
-.chat-empty-hint {
+/* 빈 대화 화면 — Claude.ai처럼 가운데 정렬된 큰 인사말 + 클릭하면 바로 전송되는
+   예시 프롬프트 카드. .chat-messages가 flex 세로 정렬이라 margin:auto로 세로도
+   가운데에 온다. */
+.chat-hero {
+  margin: auto 0;
+  padding: 40px 0;
+  text-align: center;
+}
+
+.chat-hero-greeting {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--본문색);
+}
+
+.chat-hero-sub {
+  margin: 0 0 28px;
+  font-size: 15px;
   color: var(--보조텍스트색);
-  font-size: 14px;
+}
+
+.chat-hero-prompts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
   max-width: 560px;
+  margin: 0 auto;
+}
+
+.chat-hero-prompt-card {
+  padding: 14px 16px;
+  text-align: left;
+  background: var(--카드-배경);
+  border: 1px solid var(--테두리색);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--본문색);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.chat-hero-prompt-card:hover {
+  box-shadow: var(--카드-그림자);
+  transform: translateY(-1px);
+}
+
+.chat-hero-caption {
+  margin: 28px auto 0;
+  max-width: 480px;
+  font-size: 12px;
+  color: var(--보조텍스트색);
 }
 
 .bubble-row {
@@ -1094,6 +1145,50 @@
   50% {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+/* 상태 문구("곰곰이 생각하는 중..." 등)에 은은한 빛이 훑고 지나가는 느낌을 준다 —
+   Claude.ai의 생각 중 표시와 비슷한 인상. */
+.status-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--보조텍스트색) 40%,
+    var(--본문색) 50%,
+    var(--보조텍스트색) 60%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: status-shimmer-sweep 1.8s linear infinite;
+}
+
+@keyframes status-shimmer-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* 스트리밍 중인 답변 끝에 깜빡이는 커서 — 지금 생성 중이라는 신호. 마크다운이
+   블록 요소로 렌더링돼 완벽히 마지막 글자 옆은 아니지만, 답변 바로 아래에
+   붙어 의도는 분명히 전달된다. */
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--본문색);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  50% {
+    opacity: 0;
   }
 }
 

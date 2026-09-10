@@ -7,6 +7,7 @@ import {
   downloadGeneratedFile,
   fileDownloadUrl,
   getMessages,
+  retryMessage,
   stopMessage,
   streamMessage,
   type 대기중_제안,
@@ -22,7 +23,22 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 type Props = {
   conversationId: number
   onActivity: () => void
+  사용자_이름: string | null
 }
+
+// 클로드 앱처럼 시간대별로 다른 인사말 + 이름.
+function 인사말_생성(이름: string | null): string {
+  const 시 = new Date().getHours()
+  const 시간대 = 시 < 12 ? '좋은 아침이에요' : 시 < 18 ? '안녕하세요' : '늦은 시간까지 고생 많아요'
+  return 이름 ? `${시간대}, ${이름}님` : 시간대
+}
+
+const 예시_프롬프트_목록 = [
+  '이번달 종료되는 사업은?',
+  '사업단계별로 몇 건씩이야?',
+  '가나전자 사업을 완료 상태로 바꿔줘',
+  '최근 계약된 사업 요약해줘',
+]
 
 const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp,.png,.jpg,.jpeg,.gif,.webp'
 
@@ -87,7 +103,7 @@ function 답변_복사_버튼({ text }: { text: string }) {
   )
 }
 
-export default function ChatMain({ conversationId, onActivity }: Props) {
+export default function ChatMain({ conversationId, onActivity, 사용자_이름 }: Props) {
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<메시지[]>([])
   const [연결된_사업_라벨, set연결된_사업_라벨] = useState<string | null>(null)
@@ -153,6 +169,50 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [messages, streamingText, pendingProposal])
 
+  // 보내기()/재생성() 둘 다 이벤트 처리는 완전히 같다 — 스트림 소스(신규 전송 vs
+  // 재생성)만 다르므로 핸들러 객체를 공유한다.
+  function 스트림_핸들러_생성() {
+    return {
+      onToken: (text: string) => {
+        setStreamingText((prev) => prev + text)
+        setStreamingStatus(null)
+      },
+      onStatus: (message: string) => setStreamingStatus(message),
+      onDone: (data: {
+        text: string
+        제안: 대기중_제안['요약'] | null
+        action_token: string | null
+        생성_파일: 생성_파일 | null
+        질문_대기: 명확화_질문 | null
+      }) => {
+        setIsStreaming(false)
+        setStreamingText('')
+        setStreamingStatus(null)
+        if (data.text) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: data.text }])
+        }
+        if (data.제안 && data.action_token) {
+          setPendingProposal({ 요약: data.제안, action_token: data.action_token })
+        }
+        set최근_생성파일(data.생성_파일 ?? null)
+        setPendingQuestion(data.질문_대기 ?? null)
+        onActivity()
+      },
+      onError: (message: string) => {
+        if (중단_중_ref.current) {
+          // 사용자가 직접 중단한 것 — 이미 중단()에서 상태 정리를 끝냈으니
+          // 이걸 오류로 표시하지 않는다.
+          중단_중_ref.current = false
+          return
+        }
+        setIsStreaming(false)
+        setStreamingText('')
+        setStreamingStatus(null)
+        setError(message)
+      },
+    }
+  }
+
   function 보내기(질문: string, 파일: File | null) {
     if (isStreaming) return
     if (!질문 && !파일) return
@@ -177,46 +237,7 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
     const controller = new AbortController()
     abortRef.current = controller
 
-    streamMessage(
-      conversationId,
-      질문,
-      파일,
-      {
-        onToken: (text) => {
-          setStreamingText((prev) => prev + text)
-          setStreamingStatus(null)
-        },
-        onStatus: (message) => setStreamingStatus(message),
-        onDone: (data) => {
-          setIsStreaming(false)
-          setStreamingText('')
-          setStreamingStatus(null)
-          if (data.text) {
-            setMessages((prev) => [...prev, { role: 'assistant', content: data.text }])
-          }
-          if (data.제안 && data.action_token) {
-            setPendingProposal({ 요약: data.제안, action_token: data.action_token })
-          }
-          set최근_생성파일(data.생성_파일 ?? null)
-          setPendingQuestion(data.질문_대기 ?? null)
-          onActivity()
-        },
-        onError: (message) => {
-          if (중단_중_ref.current) {
-            // 사용자가 직접 중단한 것 — 이미 중단()에서 상태 정리를 끝냈으니
-            // 이걸 오류로 표시하지 않는다.
-            중단_중_ref.current = false
-            return
-          }
-          setIsStreaming(false)
-          setStreamingText('')
-          setStreamingStatus(null)
-          setError(message)
-        },
-      },
-      controller.signal,
-      모델,
-    ).catch(() => {
+    streamMessage(conversationId, 질문, 파일, 스트림_핸들러_생성(), controller.signal, 모델).catch(() => {
       /* onError 핸들러가 이미 상태를 처리함 */
     })
   }
@@ -224,6 +245,27 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
   function 전송(e: React.FormEvent) {
     e.preventDefault()
     보내기(inputText.trim(), attachedFile)
+  }
+
+  // 클로드 앱의 '재생성' 버튼 — 마지막 답변을 지우고 그 직전 질문으로 다시 받는다.
+  // 새 사용자 메시지는 추가하지 않는다(서버가 이미 있던 질문을 재사용).
+  function 재생성() {
+    if (isStreaming) return
+    setMessages((prev) => prev.slice(0, -1))
+    setPendingProposal(null)
+    setPendingQuestion(null)
+    setError(null)
+    setStreamingStatus(null)
+    setStreamingText('')
+    set최근_생성파일(null)
+    setIsStreaming(true)
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    retryMessage(conversationId, 스트림_핸들러_생성(), controller.signal, 모델).catch(() => {
+      /* onError 핸들러가 이미 상태를 처리함 */
+    })
   }
 
   // 클로드 앱의 생성 중단 버튼 — 지금까지 받은 부분 텍스트를 그대로 화면에 확정하고
@@ -294,31 +336,55 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
        <div className="chat-column">
         {loading && <p className="sidebar-caption">불러오는 중...</p>}
         {!loading && messages.length === 0 && !isStreaming && (
-          <p className="chat-empty-hint">
-            예: '이번달 종료되는 사업은?' / '가나전자 사업을 완료 상태로 바꿔줘' — 엑셀·CSV·PDF·HWP·이미지
-            파일을 첨부하면 무조건 데이터로 반영하지 않고, 검토·상의가 필요한지 반영이 필요한지
-            먼저 판단합니다.
-          </p>
+          <div className="chat-hero">
+            <h2 className="chat-hero-greeting">{인사말_생성(사용자_이름)}</h2>
+            <p className="chat-hero-sub">무엇을 도와드릴까요?</p>
+            <div className="chat-hero-prompts">
+              {예시_프롬프트_목록.map((p) => (
+                <button key={p} type="button" className="chat-hero-prompt-card" onClick={() => 보내기(p, null)}>
+                  {p}
+                </button>
+              ))}
+            </div>
+            <p className="chat-hero-caption">
+              엑셀·CSV·PDF·HWP·이미지 파일을 첨부하면 무조건 데이터로 반영하지 않고,
+              검토·상의가 필요한지 반영이 필요한지 먼저 판단합니다.
+            </p>
+          </div>
         )}
 
-        {messages.map((m, i) =>
-          m.role === 'user' ? (
-            <div key={i} className="bubble-row bubble-row-user">
-              <div className="bubble">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+        {messages.map((m, i) => {
+          if (m.role === 'user') {
+            return (
+              <div key={i} className="bubble-row bubble-row-user">
+                <div className="bubble">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                </div>
               </div>
-            </div>
-          ) : (
+            )
+          }
+          // 재생성은 마지막 답변에만, 그리고 직전 질문에 파일 첨부가 없었을 때만 —
+          // 첨부 파일 원본은 저장돼있지 않아 재생성 시 다시 읽힐 수 없다.
+          const 이전_사용자_메시지 = messages[i - 1]
+          const 재생성_가능 =
+            i === messages.length - 1 && !isStreaming && !이전_사용자_메시지?.content.includes('📎')
+          return (
             <div key={i} className="assistant-text">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_컴포넌트}>
                 {m.content}
               </ReactMarkdown>
               <div className="assistant-actions">
                 <답변_복사_버튼 text={m.content} />
+                {재생성_가능 && (
+                  <button type="button" className="assistant-action-btn" onClick={재생성} title="다시 생성">
+                    <Icon name="refresh" size={13} />
+                    다시 생성
+                  </button>
+                )}
               </div>
             </div>
-          ),
-        )}
+          )
+        })}
 
         {!isStreaming && 최근_생성파일 && (
           <>
@@ -361,15 +427,18 @@ export default function ChatMain({ conversationId, onActivity }: Props) {
             {streamingStatus && (
               <p className="typing-indicator typing-indicator-status">
                 <span className="typing-dot" />
-                {streamingStatus}
+                <span className="status-shimmer">{streamingStatus}</span>
               </p>
             )}
             {streamingText ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_컴포넌트}>
-                {streamingText}
-              </ReactMarkdown>
+              <>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_컴포넌트}>
+                  {streamingText}
+                </ReactMarkdown>
+                <span className="stream-cursor" />
+              </>
             ) : (
-              !streamingStatus && <span className="typing-indicator">AI가 답변을 생성 중...</span>
+              !streamingStatus && <span className="typing-indicator status-shimmer">AI가 답변을 생성 중...</span>
             )}
           </div>
         )}

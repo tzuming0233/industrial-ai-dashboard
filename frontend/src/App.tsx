@@ -241,6 +241,7 @@ function App() {
             <ChatMain
               key={currentId}
               conversationId={currentId}
+              사용자_이름={내_이름}
               onActivity={() => {
                 refreshConversations()
                 set데이터_갱신_신호((v) => v + 1)

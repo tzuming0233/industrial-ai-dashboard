@@ -92,3 +92,41 @@ def test_메시지_중단_다른_계정_대화는_403(temp_db):
         _회원가입(client_b, "계정H")
         r = client_b.post(f"/api/conversations/{대화_id}/messages/stop", json={"텍스트": "몰래 저장 시도"})
         assert r.status_code == 403
+
+
+def test_메시지_재생성_기록이_비어있으면_400(client):
+    _회원가입(client, "사용자I")
+    r = client.post("/api/conversations", json={})
+    대화_id = r.json()["id"]
+
+    r = client.post(f"/api/conversations/{대화_id}/messages/retry", data={"model": "기본"})
+    assert r.status_code == 400
+
+
+def test_메시지_재생성_마지막이_user면_400(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "사용자J")
+    r = client.post("/api/conversations", json={})
+    대화_id = r.json()["id"]
+    repo.채팅기록_저장(대화_id, "user", "질문만 있고 아직 답변 없음")
+
+    r = client.post(f"/api/conversations/{대화_id}/messages/retry", data={"model": "기본"})
+    assert r.status_code == 400
+    # 검증 실패 시 기존 메시지는 그대로 남아있어야 한다.
+    메시지들 = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"]
+    assert len(메시지들) == 1
+
+
+def test_메시지_재생성_다른_계정_대화는_403(temp_db):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+
+    with TestClient(app) as client_a, TestClient(app) as client_b:
+        _회원가입(client_a, "계정K")
+        r = client_a.post("/api/conversations", json={})
+        대화_id = r.json()["id"]
+
+        _회원가입(client_b, "계정L")
+        r = client_b.post(f"/api/conversations/{대화_id}/messages/retry", data={"model": "기본"})
+        assert r.status_code == 403
