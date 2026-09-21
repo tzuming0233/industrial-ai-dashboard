@@ -1200,7 +1200,7 @@ def 대화_제목_생성(첫_메시지: str, api_key: str | None = None) -> str:
 _고정_컨텍스트_최대_글자수 = 6000
 
 
-def _시스템_프롬프트_구성() -> list[dict]:
+def _시스템_프롬프트_구성(프로젝트_시스템: str = "") -> list[dict]:
     """사용자가 위키에서 '고정컨텍스트'로 표시한 노트를, Claude Code의 CLAUDE.md처럼
     모든 AI 채팅 요청에 항상 참고하도록 시스템 프롬프트 뒤에 덧붙인다.
 
@@ -1208,25 +1208,29 @@ def _시스템_프롬프트_구성() -> list[dict]:
     SYSTEM_PROMPT 블록에만 cache_control을 걸어두면, 고정컨텍스트 노트가 매번
     달라져도(혹은 아예 없어도) 그 앞의 SYSTEM_PROMPT 캐시는 그대로 재사용된다."""
     블록들 = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
-    if not DB_PATH.exists():
-        return 블록들
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        conn.row_factory = sqlite3.Row
-        고정_노트들 = conn.execute(
-            "SELECT 제목, 내용 FROM 노트 WHERE 고정컨텍스트 = 1 ORDER BY 수정일시 DESC"
-        ).fetchall()
-    finally:
-        conn.close()
-    if not 고정_노트들:
-        return 블록들
-    묶음 = "\n\n".join(f"## {행['제목']}\n{행['내용'] or ''}" for 행 in 고정_노트들)
-    if len(묶음) > _고정_컨텍스트_최대_글자수:
-        묶음 = 묶음[:_고정_컨텍스트_최대_글자수] + "\n...(이하 생략)"
-    블록들.append({
-        "type": "text",
-        "text": "[사용자가 위키에서 '고정컨텍스트'로 표시해 항상 참고하라고 지정한 노트]\n" + 묶음,
-    })
+    고정_노트들 = []
+    if DB_PATH.exists():
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.row_factory = sqlite3.Row
+            고정_노트들 = conn.execute(
+                "SELECT 제목, 내용 FROM 노트 WHERE 고정컨텍스트 = 1 ORDER BY 수정일시 DESC"
+            ).fetchall()
+        finally:
+            conn.close()
+    if 고정_노트들:
+        묶음 = "\n\n".join(f"## {행['제목']}\n{행['내용'] or ''}" for 행 in 고정_노트들)
+        if len(묶음) > _고정_컨텍스트_최대_글자수:
+            묶음 = 묶음[:_고정_컨텍스트_최대_글자수] + "\n...(이하 생략)"
+        블록들.append({
+            "type": "text",
+            "text": "[사용자가 위키에서 '고정컨텍스트'로 표시해 항상 참고하라고 지정한 노트]\n" + 묶음,
+        })
+    if 프로젝트_시스템:
+        # 프로젝트 지식은 크고 같은 프로젝트 안에서는 턴마다 그대로라, 이 블록 끝에도
+        # 캐시 지점을 둔다 — 두 번째 턴부터는 앞의 SYSTEM_PROMPT·고정 노트·프로젝트 블록이
+        # 모두 캐시에서 읽혀 지식 파일이 커도 비용이 크게 줄어든다.
+        블록들.append({"type": "text", "text": 프로젝트_시스템, "cache_control": {"type": "ephemeral"}})
     return 블록들
 
 
@@ -1338,6 +1342,7 @@ def 질의하기_스트림(
     첨부_이미지_바이트: bytes | None = None,
     첨부_이미지_mime타입: str | None = None,
     모델_선택: str | None = None,
+    프로젝트_시스템: str = "",
 ):
     """질의하기()의 스트리밍 버전 — FastAPI SSE 엔드포인트 전용.
 
@@ -1373,7 +1378,7 @@ def 질의하기_스트림(
             ),
         }
     ]
-    system_prompt = _시스템_프롬프트_구성()
+    system_prompt = _시스템_프롬프트_구성(프로젝트_시스템)
     실제_모델 = _모델_결정(모델_선택)
 
     대기중_제안 = None

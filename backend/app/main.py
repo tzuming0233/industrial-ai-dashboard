@@ -263,8 +263,10 @@ from backend.app.chat import router as _채팅_라우터  # noqa: E402 (순환 �
 from backend.app.ontology import router as _온톨로지_라우터  # noqa: E402
 from backend.app.notes import router as _노트_라우터  # noqa: E402
 from backend.app.data_management import router as _데이터관리_라우터  # noqa: E402
+from backend.app.projects import router as _프로젝트_라우터  # noqa: E402
 
 app.include_router(_채팅_라우터)
 app.include_router(_온톨로지_라우터)
 app.include_router(_노트_라우터)
 app.include_router(_데이터관리_라우터)
+app.include_router(_프로젝트_라우터)

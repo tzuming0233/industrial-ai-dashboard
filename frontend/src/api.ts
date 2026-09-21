@@ -43,6 +43,7 @@ export type 대화 = {
   마지막_활동일시: string
   사업_id: number | null
   사업_라벨: string | null
+  프로젝트_id: number | null
 }
 
 export type 메시지 = { role: 'user' | 'assistant'; content: string }
@@ -192,10 +193,10 @@ export const restoreNoteVersion = (noteId: number, versionId: number) =>
 
 export const listConversations = () => api<대화[]>('/api/conversations')
 
-export const createConversation = (사업_id: number | null = null) =>
+export const createConversation = (프로젝트_id: number | null = null) =>
   api<{ id: number }>('/api/conversations', {
     method: 'POST',
-    body: JSON.stringify({ 사업_id }),
+    body: JSON.stringify({ 프로젝트_id }),
   })
 
 export const deleteConversation = (id: number) =>
@@ -213,6 +214,7 @@ export const getMessages = (id: number) =>
     메시지: 메시지[]
     연결된_사업_id: number | null
     사업_라벨: string | null
+    프로젝트: { id: number; 이름: string } | null
     제안: 대기중_제안 | null
   }>(`/api/conversations/${id}/messages`)
 
@@ -437,3 +439,80 @@ export function retryMessage(
     },
   })
 }
+
+// ---------------- 프로젝트 ----------------
+
+export type 프로젝트 = {
+  id: number
+  이름: string
+  설명: string | null
+  사업_id: number | null
+  사업_라벨: string | null
+  대화수: number
+  지식수: number
+  최근_활동: string
+}
+
+export type 지식_파일 = { id: number; 파일명: string; 글자수: number; 추가일시: string }
+
+export type 프로젝트_상세 = {
+  id: number
+  이름: string
+  설명: string
+  지침: string
+  사업_id: number | null
+  사업_라벨: string | null
+  지식: 지식_파일[]
+  지식_글자수: number
+  지식_한도: number
+  대화: 대화[]
+}
+
+// 프로젝트 폼은 서버가 주는 구체적인 오류(용량 초과, 이름 비어있음 등)를 그대로 보여줘야
+// 해서, api()처럼 상태 코드만 던지지 않고 응답의 detail을 메시지로 꺼낸다.
+async function 프로젝트_요청<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isForm = init.body instanceof FormData
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: isForm ? init.headers : { 'Content-Type': 'application/json', ...init.headers },
+  })
+  if (!res.ok) {
+    let 메시지 = `${res.status} ${res.statusText}`
+    try {
+      const body = await res.json()
+      if (typeof body?.detail === 'string') 메시지 = body.detail
+    } catch {
+      // JSON이 아닌 오류 응답 — 상태 코드 메시지 그대로.
+    }
+    throw new Error(메시지)
+  }
+  return res.json()
+}
+
+export const listProjects = () => api<프로젝트[]>('/api/projects')
+
+export const getProject = (id: number) => 프로젝트_요청<프로젝트_상세>(`/api/projects/${id}`)
+
+export const createProject = (값: { 이름: string; 설명?: string; 지침?: string; 사업_id?: number | null }) =>
+  프로젝트_요청<{ id: number }>('/api/projects', { method: 'POST', body: JSON.stringify(값) })
+
+export const updateProject = (
+  id: number,
+  변경: { 이름?: string; 설명?: string; 지침?: string; 사업_id?: number | null },
+) => 프로젝트_요청<{ ok: boolean }>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(변경) })
+
+export const deleteProject = (id: number) =>
+  프로젝트_요청<{ ok: boolean }>(`/api/projects/${id}`, { method: 'DELETE' })
+
+export const uploadProjectKnowledge = (id: number, file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return 프로젝트_요청<{ id: number; 글자수: number }>(`/api/projects/${id}/knowledge`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+export const deleteProjectKnowledge = (id: number, 지식_id: number) =>
+  프로젝트_요청<{ ok: boolean }>(`/api/projects/${id}/knowledge/${지식_id}`, { method: 'DELETE' })

@@ -8,6 +8,15 @@ import pandas as pd
 from backend.app.repository import 금액_컬럼들, 사업단계_옵션, 편집_컬럼순서
 
 
+class _파일버퍼(io.BytesIO):
+    """UploadFile을 기존 files.py 함수들(Streamlit UploadedFile 인터페이스 기대)이
+    바로 쓸 수 있게 .name을 붙인 얇은 어댑터."""
+
+    def __init__(self, content: bytes, name: str):
+        super().__init__(content)
+        self.name = name
+
+
 def 엑셀로_변환(df: pd.DataFrame) -> bytes:
     buffer = io.BytesIO()
     df.to_excel(buffer, index=False, sheet_name="사업현황")

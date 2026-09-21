@@ -23,24 +23,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import ai_agent
-from backend.app import auth, repository as repo
+from backend.app import auth, projects, repository as repo
 from backend.app.files import (
-    _업로드_원본_읽기, _hwp_텍스트_추출, _LLM_매핑_적용, _제안_추가행들,
+    _업로드_원본_읽기, _hwp_텍스트_추출, _LLM_매핑_적용, _제안_추가행들, _파일버퍼,
 )
 
 router = APIRouter(dependencies=[Depends(auth.인증_확인)])
 
 # 대화_id -> {"제안": {...}, "token": "..."} — 확인 대기 중인 제안(서버 메모리, session_state 대체).
 _대기중_제안: dict[int, dict] = {}
-
-
-class _파일버퍼(io.BytesIO):
-    """UploadFile을 기존 files.py 함수들(Streamlit UploadedFile 인터페이스 기대)이
-    바로 쓸 수 있게 .name을 붙인 얇은 어댑터."""
-
-    def __init__(self, content: bytes, name: str):
-        super().__init__(content)
-        self.name = name
 
 
 def _df_레코드(df: pd.DataFrame) -> list[dict]:
@@ -77,6 +68,18 @@ def _프로젝트_컨텍스트(연결된_사업_id: int | None, 전체_df: pd.Da
         f"담당자: {r.get('담당자', '')}, 사업단계: {r.get('사업단계', '')}. "
         "질문에 사업 이름이 없어도 이 사업을 가리키는 것으로 우선 해석하세요.]\n\n"
     )
+
+
+def _대화_문맥(현재_대화: dict | None, 전체_df: pd.DataFrame) -> tuple[str, str]:
+    """(사업 현황 컨텍스트 문자열, 프로젝트 시스템 텍스트)를 돌려준다.
+
+    프로젝트에 사업이 걸려있으면 그 사업이 우선이고, 없으면 프로젝트 도입 이전 방식의
+    대화 자체 사업 연결(사업_id)을 그대로 따른다."""
+    if not 현재_대화:
+        return "", ""
+    프로젝트 = repo.프로젝트_조회(현재_대화["프로젝트_id"]) if 현재_대화.get("프로젝트_id") else None
+    사업_id = (프로젝트 or {}).get("사업_id") or 현재_대화.get("사업_id")
+    return _프로젝트_컨텍스트(사업_id, 전체_df), projects.프로젝트_시스템_텍스트(프로젝트)
 
 
 def _API용_기록_구성(대화_id: int, 이전_기록: list[dict]) -> list[dict]:
@@ -298,6 +301,7 @@ def _제안_반영(제안: dict, 전체_df: pd.DataFrame, 작성자: str = "AI�
 
 class _대화_생성_요청(BaseModel):
     사업_id: int | None = None
+    프로젝트_id: int | None = None
 
 
 def _소유권_확인(대화_id: int, 사용자_id: int) -> dict:
@@ -324,7 +328,9 @@ def 대화_목록(사용자: dict = Depends(auth.현재_사용자)):
 
 @router.post("/api/conversations")
 def 대화_생성_엔드포인트(요청: _대화_생성_요청, 사용자: dict = Depends(auth.현재_사용자)):
-    return {"id": repo.대화_생성(사업_id=요청.사업_id, 사용자_id=사용자["id"])}
+    if 요청.프로젝트_id is not None:
+        projects.소유권_확인(요청.프로젝트_id, 사용자["id"])
+    return {"id": repo.대화_생성(사업_id=요청.사업_id, 사용자_id=사용자["id"], 프로젝트_id=요청.프로젝트_id)}
 
 
 @router.delete("/api/conversations/{conversation_id}")
@@ -366,6 +372,11 @@ def 대화_메시지(conversation_id: int, 사용자: dict = Depends(auth.현재
         "메시지": repo.채팅기록_불러오기(대화_id),
         "연결된_사업_id": 연결된_사업_id,
         "사업_라벨": 라벨_맵.get(연결된_사업_id) if 연결된_사업_id else None,
+        "프로젝트": (
+            {"id": 프로젝트["id"], "이름": 프로젝트["이름"]}
+            if (프로젝트 := repo.프로젝트_조회(현재_대화["프로젝트_id"]) if 현재_대화.get("프로젝트_id") else None)
+            else None
+        ),
         "제안": (
             {"요약": _제안_요약(보류중["제안"], 전체_df), "action_token": 보류중["token"]}
             if 보류중 else None
@@ -473,8 +484,8 @@ def _이벤트_전달(이벤트: dict):
     return _sse("status", {"message": 이벤트["text"]})
 
 
-def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None):
-    for 이벤트 in ai_agent.질의하기_스트림(프로젝트_컨텍스트 + 질문, history=API용_기록, 모델_선택=모델_선택):
+def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None, 프로젝트_시스템: str = ""):
+    for 이벤트 in ai_agent.질의하기_스트림(프로젝트_컨텍스트 + 질문, history=API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
@@ -485,7 +496,7 @@ def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스
 
 
 def _문서_파일_스트림(
-    대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None,
+    대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None, 프로젝트_시스템: str = "",
 ):
     if 첨부.name.lower().endswith(".pdf"):
         # 텍스트만 미리 뽑아내는 대신 원본 PDF를 그대로 Claude에 첨부한다 —
@@ -494,7 +505,7 @@ def _문서_파일_스트림(
         원본_바이트 = 첨부.getvalue()
         합쳐진_질문 = 프로젝트_컨텍스트 + (질문 or f"'{첨부.name}' 문서 내용을 요약해줘.")
         for 이벤트 in ai_agent.질의하기_스트림(
-            합쳐진_질문, history=API용_기록, 첨부_문서_바이트=원본_바이트, 모델_선택=모델_선택,
+            합쳐진_질문, history=API용_기록, 첨부_문서_바이트=원본_바이트, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템,
         ):
             if 이벤트["type"] in ("token", "status"):
                 yield _이벤트_전달(이벤트)
@@ -523,7 +534,7 @@ def _문서_파일_스트림(
         f"[첨부 문서 '{첨부.name}' 내용]\n{문서_텍스트}\n\n"
         f"[사용자 질문]\n{질문 or '이 문서 내용을 요약해줘.'}"
     )
-    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 모델_선택=모델_선택):
+    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
@@ -540,7 +551,7 @@ _이미지_MIME_맵 = {
 
 
 def _이미지_파일_스트림(
-    대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None,
+    대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 모델_선택: str | None = None, 프로젝트_시스템: str = "",
 ):
     # PDF와 같은 패턴 — 별도 OCR 없이 원본 이미지를 그대로 Claude에 첨부해 네이티브
     # 비전으로 직접 읽게 한다(화이트보드 사진, 명함, 스크린샷 등).
@@ -550,7 +561,7 @@ def _이미지_파일_스트림(
     합쳐진_질문 = 프로젝트_컨텍스트 + (질문 or f"'{첨부.name}' 이미지 내용을 설명해줘.")
     for 이벤트 in ai_agent.질의하기_스트림(
         합쳐진_질문, history=API용_기록, 첨부_이미지_바이트=원본_바이트, 첨부_이미지_mime타입=mime타입,
-        모델_선택=모델_선택,
+        모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템,
     ):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
@@ -563,7 +574,7 @@ def _이미지_파일_스트림(
 
 def _표_파일_스트림(
     대화_id: int, 첨부, 질문: str, 프로젝트_컨텍스트: str, API용_기록: list, 전체_df: pd.DataFrame,
-    모델_선택: str | None = None,
+    모델_선택: str | None = None, 프로젝트_시스템: str = "",
 ):
     원본_df = _업로드_원본_읽기(첨부)
     if 원본_df.empty:
@@ -583,7 +594,7 @@ def _표_파일_스트림(
     제안 = None
     생성된_파일 = None
     질문_대기 = None
-    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 모델_선택=모델_선택):
+    for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
         else:
@@ -638,8 +649,7 @@ async def 메시지_스트림(
 
     전체_df = repo.사업현황_불러오기()
     현재_대화 = repo.대화_조회(대화_id)
-    연결된_사업_id = 현재_대화.get("사업_id") if 현재_대화 else None
-    프로젝트_컨텍스트 = _프로젝트_컨텍스트(연결된_사업_id, 전체_df)
+    프로젝트_컨텍스트, 프로젝트_시스템 = _대화_문맥(현재_대화, 전체_df)
     API용_기록 = _API용_기록_구성(대화_id, 이전_기록)
 
     파일명_소문자 = 첨부.name.lower() if 첨부 else ""
@@ -651,18 +661,18 @@ async def 메시지_스트림(
         try:
             if 표_파일:
                 yield from _표_파일_스트림(
-                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 전체_df, 모델_선택=모델_선택,
+                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 전체_df, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템,
                 )
             elif 문서_파일:
                 yield from _문서_파일_스트림(
-                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택,
+                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템,
                 )
             elif 이미지_파일:
                 yield from _이미지_파일_스트림(
-                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택,
+                    대화_id, 첨부, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템,
                 )
             elif 질문:
-                yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택)
+                yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템)
             else:
                 yield _sse("done", {"text": "", "제안": None, "action_token": None})
         except Exception as e:
@@ -696,13 +706,12 @@ async def 메시지_재생성(
 
     전체_df = repo.사업현황_불러오기()
     현재_대화 = repo.대화_조회(대화_id)
-    연결된_사업_id = 현재_대화.get("사업_id") if 현재_대화 else None
-    프로젝트_컨텍스트 = _프로젝트_컨텍스트(연결된_사업_id, 전체_df)
+    프로젝트_컨텍스트, 프로젝트_시스템 = _대화_문맥(현재_대화, 전체_df)
     API용_기록 = _API용_기록_구성(대화_id, 기록[:-1])
 
     def 이벤트_스트림():
         try:
-            yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택)
+            yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템)
         except Exception as e:
             yield _sse("error", {"message": str(e)})
 

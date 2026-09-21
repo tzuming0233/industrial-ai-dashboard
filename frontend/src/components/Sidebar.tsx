@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { 대화, 사업행 } from '../api'
+import { useMemo, useState } from 'react'
+import type { 대화, 프로젝트 } from '../api'
 import Icon from './Icon'
 
 type Props = {
   conversations: 대화[]
   currentId: number | null
-  businesses: 사업행[]
+  projects: 프로젝트[]
+  // 프로젝트 페이지를 보는 중이면 그 프로젝트를 사이드바에서 강조한다.
+  현재_프로젝트_id: number | null
   onSelect: (id: number) => void
   onNew: () => void
-  onNewWithProject: (사업_id: number) => void
+  onOpenProject: (id: number) => void
+  onNewProject: () => void
   onDelete: (id: number) => void
   onRename: (id: number, 제목: string) => Promise<void>
 }
@@ -22,8 +25,7 @@ function 생성일시_표시(iso: string): string {
   return d.toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
-// 클로드 앱 사이드바처럼 "오늘/어제/지난 7일/이전"으로 나눈다 — 프로젝트에 안 묶인
-// 일반 대화에만 적용(프로젝트별 그룹이 더 유용한 분류라 그건 그대로 둔다).
+// 클로드 앱 사이드바처럼 "오늘/어제/지난 7일/이전"으로 나눈다.
 const _날짜_버킷_순서 = ['오늘', '어제', '지난 7일', '이전'] as const
 type 날짜버킷 = (typeof _날짜_버킷_순서)[number]
 
@@ -42,82 +44,22 @@ function 날짜_버킷(iso: string): 날짜버킷 {
 export default function Sidebar({
   conversations,
   currentId,
-  businesses,
+  projects,
+  현재_프로젝트_id,
   onSelect,
   onNew,
-  onNewWithProject,
+  onOpenProject,
+  onNewProject,
   onDelete,
   onRename,
 }: Props) {
   const [검색어, set검색어] = useState('')
-  const [프로젝트패널_열림, set프로젝트패널_열림] = useState(false)
-  const [프로젝트_검색어, set프로젝트_검색어] = useState('')
-  const [강조_인덱스, set강조_인덱스] = useState(0)
   const [삭제확인_id, set삭제확인_id] = useState<number | null>(null)
   // 클로드 앱처럼 제목을 그 자리에서 바로 고친다(Enter/포커스 이탈=저장, Escape=취소).
   const [편집중_id, set편집중_id] = useState<number | null>(null)
   const [편집_값, set편집_값] = useState('')
 
-  const 프로젝트_입력ref = useRef<HTMLInputElement>(null)
-  const 프로젝트팝오버_ref = useRef<HTMLDivElement>(null)
-  const 프로젝트버튼_ref = useRef<HTMLButtonElement>(null)
-
-  const 사업_라벨_목록 = useMemo(
-    () =>
-      businesses
-        .map((b) => ({ id: b.id, 라벨: `${b.업체명 ?? ''} · ${b.용역명 ?? ''}`.replace(/^ · /, '') }))
-        .sort((a, b) => a.라벨.localeCompare(b.라벨)),
-    [businesses],
-  )
-
-  const 프로젝트_후보 = useMemo(() => {
-    const q = 프로젝트_검색어.trim().toLowerCase()
-    const list = q ? 사업_라벨_목록.filter((b) => b.라벨.toLowerCase().includes(q)) : 사업_라벨_목록
-    return list.slice(0, 30)
-  }, [사업_라벨_목록, 프로젝트_검색어])
-
-  // 검색어가 바뀌어 후보 목록이 달라지면 키보드 강조 위치를 맨 위로 되돌린다.
-  useEffect(() => {
-    set강조_인덱스(0)
-  }, [프로젝트_후보])
-
-  // 팝오버가 열리면 검색창에 바로 포커스하고(커맨드 팔레트 관례), 바깥을 클릭하면 닫는다.
-  useEffect(() => {
-    if (!프로젝트패널_열림) return
-    프로젝트_입력ref.current?.focus()
-    function 바깥클릭_처리(e: MouseEvent) {
-      if (프로젝트팝오버_ref.current && !프로젝트팝오버_ref.current.contains(e.target as Node)) {
-        set프로젝트패널_열림(false)
-      }
-    }
-    document.addEventListener('mousedown', 바깥클릭_처리)
-    return () => document.removeEventListener('mousedown', 바깥클릭_처리)
-  }, [프로젝트패널_열림])
-
-  function 프로젝트_선택(id: number) {
-    onNewWithProject(id)
-    set프로젝트패널_열림(false)
-    set프로젝트_검색어('')
-    프로젝트버튼_ref.current?.focus()
-  }
-
-  function 프로젝트_검색_키다운(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      set강조_인덱스((i) => Math.min(i + 1, 프로젝트_후보.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      set강조_인덱스((i) => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      const 대상 = 프로젝트_후보[강조_인덱스]
-      if (대상) 프로젝트_선택(대상.id)
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      set프로젝트패널_열림(false)
-      프로젝트버튼_ref.current?.focus()
-    }
-  }
+  const [프로젝트_모두_보기, set프로젝트_모두_보기] = useState(false)
 
   const 필터된_목록 = useMemo(() => {
     const q = 검색어.trim().toLowerCase()
@@ -125,19 +67,16 @@ export default function Sidebar({
     return conversations.filter((c) => (c.제목 ?? '').toLowerCase().includes(q))
   }, [conversations, 검색어])
 
-  const { 프로젝트별, 일반 } = useMemo(() => {
-    const 프로젝트별 = new Map<number, 대화[]>()
-    const 일반: 대화[] = []
-    for (const c of 필터된_목록) {
-      if (c.사업_id) {
-        if (!프로젝트별.has(c.사업_id)) 프로젝트별.set(c.사업_id, [])
-        프로젝트별.get(c.사업_id)!.push(c)
-      } else {
-        일반.push(c)
-      }
-    }
-    return { 프로젝트별, 일반 }
-  }, [필터된_목록])
+  const 프로젝트_이름_맵 = useMemo(() => new Map(projects.map((p) => [p.id, p.이름])), [projects])
+
+  const 필터된_프로젝트 = useMemo(() => {
+    const q = 검색어.trim().toLowerCase()
+    return q ? projects.filter((p) => p.이름.toLowerCase().includes(q)) : projects
+  }, [projects, 검색어])
+
+  // 클로드 앱처럼 최근 대화는 프로젝트 소속 여부와 상관없이 한 목록에 날짜별로 모으고,
+  // 프로젝트 대화에는 소속 프로젝트 이름을 작은 태그로 붙인다.
+  const 일반 = 필터된_목록
 
   const 일반_날짜별 = useMemo(() => {
     const 맵 = new Map<날짜버킷, 대화[]>()
@@ -198,6 +137,9 @@ export default function Sidebar({
             title="더블클릭하여 이름 바꾸기"
           >
             {d.제목 || `새 대화 (${생성일시_표시(d.생성일시)})`}
+            {d.프로젝트_id && 프로젝트_이름_맵.get(d.프로젝트_id) && (
+              <span className="conv-row-project-tag">{프로젝트_이름_맵.get(d.프로젝트_id)}</span>
+            )}
           </button>
         )}
         <button
@@ -227,56 +169,6 @@ export default function Sidebar({
         새 대화
       </button>
 
-      <div className="project-popover-wrap" ref={프로젝트팝오버_ref}>
-        <button
-          ref={프로젝트버튼_ref}
-          className="btn btn-secondary btn-block sidebar-action-btn"
-          onClick={() => set프로젝트패널_열림((v) => !v)}
-          aria-expanded={프로젝트패널_열림}
-          aria-haspopup="listbox"
-        >
-          <Icon name="folder" size={15} />
-          프로젝트로 새 대화
-        </button>
-        {프로젝트패널_열림 && (
-          <div className="project-popover">
-            <p className="sidebar-caption">사업현황의 특정 사업에 연결된 대화를 시작합니다.</p>
-            <input
-              ref={프로젝트_입력ref}
-              className="text-input"
-              placeholder="업체명·용역명 검색"
-              value={프로젝트_검색어}
-              onChange={(e) => set프로젝트_검색어(e.target.value)}
-              onKeyDown={프로젝트_검색_키다운}
-              role="combobox"
-              aria-expanded
-              aria-controls="project-candidate-listbox"
-              aria-activedescendant={
-                프로젝트_후보[강조_인덱스] ? `project-candidate-${프로젝트_후보[강조_인덱스].id}` : undefined
-              }
-            />
-            <div className="project-candidate-list" role="listbox" id="project-candidate-listbox">
-              {프로젝트_후보.length === 0 && <p className="sidebar-caption">일치하는 사업이 없습니다.</p>}
-              {프로젝트_후보.map((b, i) => (
-                <button
-                  key={b.id}
-                  id={`project-candidate-${b.id}`}
-                  role="option"
-                  aria-selected={i === 강조_인덱스}
-                  className={`conv-row-title project-candidate-row ${
-                    i === 강조_인덱스 ? 'project-candidate-row-active' : ''
-                  }`}
-                  onMouseEnter={() => set강조_인덱스(i)}
-                  onClick={() => 프로젝트_선택(b.id)}
-                >
-                  {b.라벨 || `사업 #${b.id}`}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
       <div className="search-input-wrap">
         <Icon name="search" size={14} />
         <input
@@ -288,20 +180,48 @@ export default function Sidebar({
       </div>
 
       <div className="conv-list">
+        <div className="conv-group">
+          <div className="conv-group-head">
+            <p className="conv-group-label">
+              <Icon name="folder" size={12} />
+              프로젝트
+            </p>
+            <button
+              type="button"
+              className="conv-group-add"
+              onClick={onNewProject}
+              title="새 프로젝트"
+              aria-label="새 프로젝트 만들기"
+            >
+              <Icon name="plus" size={13} />
+            </button>
+          </div>
+          {projects.length === 0 && (
+            <button type="button" className="project-empty-cta" onClick={onNewProject}>
+              프로젝트를 만들어 지침과 자료를 모아보세요
+            </button>
+          )}
+          {(프로젝트_모두_보기 ? 필터된_프로젝트 : 필터된_프로젝트.slice(0, 6)).map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`project-row ${p.id === 현재_프로젝트_id ? 'project-row-active' : ''}`}
+              onClick={() => onOpenProject(p.id)}
+              title={p.설명 || p.이름}
+            >
+              <span className="project-row-name">{p.이름}</span>
+              {p.지식수 > 0 && <Icon name="file" size={12} />}
+              <span className="project-row-count">{p.대화수}</span>
+            </button>
+          ))}
+          {필터된_프로젝트.length > 6 && (
+            <button type="button" className="project-more-btn" onClick={() => set프로젝트_모두_보기((v) => !v)}>
+              {프로젝트_모두_보기 ? '접기' : `모두 보기 (${필터된_프로젝트.length})`}
+            </button>
+          )}
+        </div>
+
         {필터된_목록.length === 0 && <p className="sidebar-caption">검색 결과가 없습니다.</p>}
-        {[...프로젝트별.entries()].map(([사업_id, 목록]) => {
-          const 라벨 = businesses.find((b) => b.id === 사업_id)
-          const 표시라벨 = 라벨 ? `${라벨.업체명} · ${라벨.용역명}` : `사업 #${사업_id}`
-          return (
-            <div key={사업_id} className="conv-group">
-              <p className="conv-group-label">
-                <Icon name="folder" size={12} />
-                {표시라벨}
-              </p>
-              {목록.map(대화_행)}
-            </div>
-          )
-        })}
         {_날짜_버킷_순서.map((버킷) => {
           const 목록 = 일반_날짜별.get(버킷)
           if (!목록 || 목록.length === 0) return null

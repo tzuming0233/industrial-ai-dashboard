@@ -68,6 +68,32 @@ def DB_준비():
     이관.SQLite로_적재(df)
 
 
+def _사업연결_대화를_프로젝트로_이관(conn: sqlite3.Connection) -> None:
+    """프로젝트가 독립 개념이 되기 전엔 '프로젝트 = 대화에 걸린 사업 하나'였다. 그때
+    사업에 묶어둔 대화들이 계속 같은 묶음으로 보이도록, (사용자, 사업) 조합마다 사업 연결
+    프로젝트를 하나씩 만들어 옮겨 담는다(대화의 사업_id는 그대로 둔다)."""
+    조합들 = conn.execute(
+        "SELECT DISTINCT 사업_id, 사용자_id FROM 대화 WHERE 사업_id IS NOT NULL"
+    ).fetchall()
+    지금 = _dt.datetime.now().isoformat(timespec="seconds")
+    for 사업_id, 사용자_id in 조합들:
+        이름 = f"사업 #{사업_id}"
+        try:
+            행 = conn.execute("SELECT 업체명, 용역명 FROM 사업현황 WHERE id = ?", (사업_id,)).fetchone()
+            if 행:
+                이름 = f"{행[0] or ''} · {행[1] or ''}".strip(" ·") or 이름
+        except sqlite3.OperationalError:
+            pass  # 사업현황 테이블이 아직 없는 환경 — 번호 이름으로 둔다.
+        cur = conn.execute(
+            "INSERT INTO 프로젝트 (사용자_id, 이름, 사업_id, 생성일시, 수정일시) VALUES (?, ?, ?, ?, ?)",
+            (사용자_id, 이름, 사업_id, 지금, 지금),
+        )
+        conn.execute(
+            "UPDATE 대화 SET 프로젝트_id = ? WHERE 사업_id = ? AND 사용자_id IS ?",
+            (cur.lastrowid, 사업_id, 사용자_id),
+        )
+
+
 def 채팅_DB_준비():
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -120,6 +146,41 @@ def 채팅_DB_준비():
             conn.execute("ALTER TABLE 대화 ADD COLUMN 사용자_id INTEGER")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_채팅기록_대화_id ON 채팅기록 (대화_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_대화_사용자_id ON 대화 (사용자_id)")
+
+        # Claude 프로젝트처럼 이름·설명·지침·지식 파일을 가진 독립 작업공간. 사업_id는 선택 —
+        # 걸어두면 그 사업의 현황 데이터가 프로젝트 대화마다 자동 컨텍스트로 붙는다.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 프로젝트 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                사용자_id INTEGER,
+                이름 TEXT NOT NULL,
+                설명 TEXT,
+                지침 TEXT,
+                사업_id INTEGER,
+                생성일시 TEXT,
+                수정일시 TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 프로젝트_지식 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                프로젝트_id INTEGER NOT NULL,
+                파일명 TEXT NOT NULL,
+                내용 TEXT NOT NULL,
+                글자수 INTEGER NOT NULL,
+                추가일시 TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_프로젝트_사용자_id ON 프로젝트 (사용자_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_프로젝트_지식_프로젝트_id ON 프로젝트_지식 (프로젝트_id)")
+        if "프로젝트_id" not in 기존_대화_컬럼:
+            conn.execute("ALTER TABLE 대화 ADD COLUMN 프로젝트_id INTEGER")
+            _사업연결_대화를_프로젝트로_이관(conn)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_대화_프로젝트_id ON 대화 (프로젝트_id)")
         conn.commit()
     finally:
         conn.close()
@@ -556,7 +617,7 @@ def 대화_목록_불러오기(사용자_id: int | None = None) -> list[dict]:
     try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id FROM 대화 "
+            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id, 프로젝트_id FROM 대화 "
             "WHERE 사용자_id = ? OR 사용자_id IS NULL ORDER BY 마지막_활동일시 DESC",
             (사용자_id,),
         ).fetchall()
@@ -570,7 +631,7 @@ def 대화_조회(대화_id: int) -> dict | None:
     try:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id FROM 대화 WHERE id = ?",
+            "SELECT id, 제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id, 프로젝트_id FROM 대화 WHERE id = ?",
             (대화_id,),
         ).fetchone()
         return dict(row) if row else None
@@ -578,13 +639,13 @@ def 대화_조회(대화_id: int) -> dict | None:
         conn.close()
 
 
-def 대화_생성(사업_id: int | None = None, 사용자_id: int | None = None) -> int:
+def 대화_생성(사업_id: int | None = None, 사용자_id: int | None = None, 프로젝트_id: int | None = None) -> int:
     conn = sqlite3.connect(DB_PATH)
     try:
         지금 = _dt.datetime.now().isoformat(timespec="seconds")
         cur = conn.execute(
-            "INSERT INTO 대화 (제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id) VALUES (?, ?, ?, ?, ?)",
-            (None, 지금, 지금, 사업_id, 사용자_id),
+            "INSERT INTO 대화 (제목, 생성일시, 마지막_활동일시, 사업_id, 사용자_id, 프로젝트_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (None, 지금, 지금, 사업_id, 사용자_id, 프로젝트_id),
         )
         conn.commit()
         return cur.lastrowid
@@ -619,6 +680,146 @@ def 대화_요약_저장(대화_id: int, 요약: str, 메시지수: int) -> None
             "UPDATE 대화 SET 요약 = ?, 요약_메시지수 = ? WHERE id = ?", (요약, 메시지수, 대화_id)
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------- 프로젝트 ----------------
+
+_프로젝트_수정_허용_필드 = {"이름", "설명", "지침", "사업_id"}
+
+
+def 프로젝트_목록_불러오기(사용자_id: int | None) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT p.id, p.이름, p.설명, p.사업_id, p.생성일시, p.수정일시,
+                   (SELECT COUNT(*) FROM 대화 WHERE 프로젝트_id = p.id) AS 대화수,
+                   (SELECT COUNT(*) FROM 프로젝트_지식 WHERE 프로젝트_id = p.id) AS 지식수,
+                   COALESCE((SELECT MAX(마지막_활동일시) FROM 대화 WHERE 프로젝트_id = p.id), p.수정일시) AS 최근_활동
+            FROM 프로젝트 p
+            WHERE p.사용자_id = ? OR p.사용자_id IS NULL
+            ORDER BY 최근_활동 DESC
+            """,
+            (사용자_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 프로젝트_조회(프로젝트_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM 프로젝트 WHERE id = ?", (프로젝트_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def 프로젝트_생성(사용자_id: int | None, 이름: str, 설명: str = "", 지침: str = "", 사업_id: int | None = None) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        cur = conn.execute(
+            "INSERT INTO 프로젝트 (사용자_id, 이름, 설명, 지침, 사업_id, 생성일시, 수정일시) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (사용자_id, 이름, 설명, 지침, 사업_id, 지금, 지금),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def 프로젝트_수정(프로젝트_id: int, 변경: dict) -> None:
+    변경 = {k: v for k, v in 변경.items() if k in _프로젝트_수정_허용_필드}
+    if not 변경:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        set절 = ", ".join(f"{k} = ?" for k in 변경) + ", 수정일시 = ?"
+        conn.execute(f"UPDATE 프로젝트 SET {set절} WHERE id = ?", (*변경.values(), 지금, 프로젝트_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def 프로젝트_삭제(프로젝트_id: int) -> None:
+    """프로젝트와 지식 파일만 지우고, 속했던 대화는 일반 대화로 남긴다(대화를 잃지 않게)."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("UPDATE 대화 SET 프로젝트_id = NULL WHERE 프로젝트_id = ?", (프로젝트_id,))
+        conn.execute("DELETE FROM 프로젝트_지식 WHERE 프로젝트_id = ?", (프로젝트_id,))
+        conn.execute("DELETE FROM 프로젝트 WHERE id = ?", (프로젝트_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def 프로젝트_지식_목록(프로젝트_id: int) -> list[dict]:
+    """내용 본문은 빼고 목록 표시에 필요한 메타만 — 본문은 크다."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 파일명, 글자수, 추가일시 FROM 프로젝트_지식 WHERE 프로젝트_id = ? ORDER BY id",
+            (프로젝트_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 프로젝트_지식_본문_불러오기(프로젝트_id: int) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 파일명, 내용, 글자수 FROM 프로젝트_지식 WHERE 프로젝트_id = ? ORDER BY id",
+            (프로젝트_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 프로젝트_지식_추가(프로젝트_id: int, 파일명: str, 내용: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        cur = conn.execute(
+            "INSERT INTO 프로젝트_지식 (프로젝트_id, 파일명, 내용, 글자수, 추가일시) VALUES (?, ?, ?, ?, ?)",
+            (프로젝트_id, 파일명, 내용, len(내용), 지금),
+        )
+        conn.execute("UPDATE 프로젝트 SET 수정일시 = ? WHERE id = ?", (지금, 프로젝트_id))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def 프로젝트_지식_삭제(프로젝트_id: int, 지식_id: int) -> bool:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.execute(
+            "DELETE FROM 프로젝트_지식 WHERE id = ? AND 프로젝트_id = ?", (지식_id, 프로젝트_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def 프로젝트_지식_총글자수(프로젝트_id: int) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        return conn.execute(
+            "SELECT COALESCE(SUM(글자수), 0) FROM 프로젝트_지식 WHERE 프로젝트_id = ?", (프로젝트_id,)
+        ).fetchone()[0]
     finally:
         conn.close()
 

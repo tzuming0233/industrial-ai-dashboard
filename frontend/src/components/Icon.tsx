@@ -27,6 +27,8 @@ export type IconName =
   | 'stop'
   | 'refresh'
   | 'arrow-down'
+  | 'arrow-left'
+  | 'file'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -85,6 +87,8 @@ const paths: Record<IconName, ReactNode> = {
   zap: <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />,
   // 생성 중단 버튼용 — 정지 아이콘은 관례상 윤곽선이 아니라 채워진 사각형이라
   // 부모 svg의 fill="none"을 이 요소에서만 명시적으로 덮어쓴다.
+  'arrow-left': <path d="M19 12H5m0 0 6-6m-6 6 6 6" />,
+  file: <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Zm0 0v5h5" />,
   'arrow-down': <path d="M12 5v14m0 0-6-6m6 6 6-6" />,
   stop: <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />,
   refresh: (

@@ -24,6 +24,10 @@ type Props = {
   conversationId: number
   onActivity: () => void
   사용자_이름: string | null
+  // 프로젝트 페이지 입력창에서 시작한 새 대화의 첫 질문 — 열리자마자 한 번만 자동 전송한다.
+  초기_질문: string | null
+  onInitialConsumed: () => void
+  onOpenProject: (id: number) => void
 }
 
 // 클로드 앱처럼 시간대별로 다른 인사말 + 이름.
@@ -116,10 +120,18 @@ function 답변_복사_버튼({ text }: { text: string }) {
   )
 }
 
-export default function ChatMain({ conversationId, onActivity, 사용자_이름 }: Props) {
+export default function ChatMain({
+  conversationId,
+  onActivity,
+  사용자_이름,
+  초기_질문,
+  onInitialConsumed,
+  onOpenProject,
+}: Props) {
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<메시지[]>([])
   const [연결된_사업_라벨, set연결된_사업_라벨] = useState<string | null>(null)
+  const [프로젝트_정보, set프로젝트_정보] = useState<{ id: number; 이름: string } | null>(null)
   const [pendingProposal, setPendingProposal] = useState<대기중_제안 | null>(null)
   const [proposalBusy, setProposalBusy] = useState(false)
 
@@ -151,6 +163,7 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
   // 사용자가 '중단'을 눌러 일부러 스트림을 끊은 경우, streamMessage의 onError가
   // 이걸 진짜 네트워크 오류로 오인해 화면에 "오류: ..."를 띄우지 않도록 구분한다.
   const 중단_중_ref = useRef(false)
+  const 초기_전송함_ref = useRef(false)
 
   // 클로드 앱처럼 여러 줄까지 자동으로 늘어나는 입력창(최대 높이는 CSS에서 캡).
   useEffect(() => {
@@ -178,6 +191,7 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
       .then((data) => {
         setMessages(data.메시지)
         set연결된_사업_라벨(data.사업_라벨)
+        set프로젝트_정보(data.프로젝트)
         setPendingProposal(data.제안)
       })
       .finally(() => setLoading(false))
@@ -279,6 +293,14 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
       /* onError 핸들러가 이미 상태를 처리함 */
     })
   }
+
+  // 프로젝트 페이지에서 시작한 대화 — 기록 로딩이 끝나 빈 대화로 확인되면 첫 질문을 자동 전송.
+  useEffect(() => {
+    if (loading || !초기_질문 || 초기_전송함_ref.current || messages.length > 0) return
+    초기_전송함_ref.current = true
+    onInitialConsumed()
+    보내기(초기_질문, null)
+  }, [loading])
 
   // 파일을 채팅 화면 어디에나 끌어다 놓아 첨부한다(클로드 앱과 동일한 동작).
   function 첨부_시도(f: File | undefined) {
@@ -424,10 +446,15 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
           <span>{허용_확장자.replaceAll(',', ' ')}</span>
         </div>
       )}
-      {연결된_사업_라벨 && (
+      {(프로젝트_정보 || 연결된_사업_라벨) && (
         <p className="chat-project-caption">
           <Icon name="folder" size={13} />
-          연결된 사업: {연결된_사업_라벨}
+          {프로젝트_정보 && (
+            <button type="button" className="chat-project-link" onClick={() => onOpenProject(프로젝트_정보.id)}>
+              {프로젝트_정보.이름}
+            </button>
+          )}
+          {!프로젝트_정보 && 연결된_사업_라벨 && <>연결된 사업: {연결된_사업_라벨}</>}
         </p>
       )}
 
