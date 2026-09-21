@@ -339,6 +339,21 @@ def 대화_삭제_엔드포인트(conversation_id: int, 사용자: dict = Depend
     return {"ok": True}
 
 
+class _대화_이름변경_요청(BaseModel):
+    제목: str
+
+
+@router.patch("/api/conversations/{conversation_id}")
+def 대화_이름_변경(conversation_id: int, 요청: _대화_이름변경_요청, 사용자: dict = Depends(auth.현재_사용자)):
+    대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
+    제목 = 요청.제목.strip()
+    if not 제목:
+        raise HTTPException(status_code=400, detail="제목을 입력해주세요.")
+    repo.대화_제목_설정(대화_id, 제목[:60])
+    return {"ok": True}
+
+
 @router.get("/api/conversations/{conversation_id}/messages")
 def 대화_메시지(conversation_id: int, 사용자: dict = Depends(auth.현재_사용자)):
     대화_id = conversation_id

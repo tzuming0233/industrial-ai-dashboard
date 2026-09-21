@@ -201,6 +201,13 @@ export const createConversation = (사업_id: number | null = null) =>
 export const deleteConversation = (id: number) =>
   api<{ ok: boolean }>(`/api/conversations/${id}`, { method: 'DELETE' })
 
+export const renameConversation = (id: number, 제목: string) =>
+  api<{ ok: boolean }>(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 제목 }),
+  })
+
 export const getMessages = (id: number) =>
   api<{
     메시지: 메시지[]

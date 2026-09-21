@@ -5,6 +5,7 @@ import {
   deleteConversation,
   getMe,
   listConversations,
+  renameConversation,
   login,
   logout,
   getBusiness,
@@ -102,6 +103,11 @@ function App() {
     const { id } = await createConversation(사업_id)
     await refreshConversations()
     setCurrentId(id)
+  }
+
+  async function onRename(id: number, 제목: string) {
+    await renameConversation(id, 제목)
+    await refreshConversations()
   }
 
   async function onDelete(id: number) {
@@ -204,6 +210,7 @@ function App() {
             onNew={onNew}
             onNewWithProject={onNewWithProject}
             onDelete={onDelete}
+            onRename={onRename}
           />
         ) : (
           <div className={`main-pane ${탭 === '위키' ? '' : 'main-pane-scroll'}`}>

@@ -725,13 +725,35 @@
   cursor: pointer;
   padding: 6px;
   font-size: 13px;
-  opacity: 0.6;
+  opacity: 0;
   border-radius: 6px;
+  transition: opacity 0.15s ease, background 0.15s ease;
 }
 
-.conv-row-delete:hover {
+/* 클로드 앱처럼 행 액션(이름 바꾸기/삭제)은 hover·선택·키보드 포커스 때만 드러낸다. */
+.conv-row:hover .conv-row-delete,
+.conv-row-active .conv-row-delete,
+.conv-row-delete:focus-visible {
+  opacity: 0.6;
+}
+
+.conv-row .conv-row-delete:hover {
   opacity: 1;
   background: var(--테두리색);
+}
+
+.conv-row-edit-input {
+  flex: 1;
+  min-width: 0;
+  margin: 3px 0 3px 4px;
+  padding: 5px 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--본문색);
+  background: var(--카드-배경);
+  border: 1px solid var(--남색);
+  border-radius: 6px;
+  outline: none;
 }
 
 .delete-confirm {
@@ -748,6 +770,64 @@
   min-width: 0;
   height: 100%;
   background: var(--카드-배경);
+}
+
+.chat-main {
+  position: relative;
+}
+
+/* 파일을 끌어다 놓을 때 뜨는 전체 덮개. pointer-events:none이라 drop 이벤트는
+   아래 .chat-main이 그대로 받는다. */
+.chat-drop-overlay {
+  position: absolute;
+  inset: 8px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 2px dashed var(--남색);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--카드-배경) 88%, var(--남색));
+  color: var(--남색-진하게);
+  pointer-events: none;
+}
+
+.chat-drop-overlay p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.chat-drop-overlay span {
+  font-size: 12px;
+  color: var(--보조텍스트색);
+}
+
+/* 위로 스크롤해 있을 때 입력창 바로 위에 떠서 맨 아래로 데려다 주는 원형 버튼. */
+.scroll-bottom-btn {
+  position: absolute;
+  left: 50%;
+  top: -40px;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--테두리색);
+  background: var(--카드-배경);
+  color: var(--본문색);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  animation: bubble-in 0.15s ease;
+}
+
+.scroll-bottom-btn:hover {
+  background: var(--배경색);
 }
 
 .chat-project-caption {
@@ -975,6 +1055,21 @@
   position: relative;
 }
 
+.code-lang-label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 12px;
+  color: var(--보조텍스트색);
+  text-transform: lowercase;
+  pointer-events: none;
+}
+
+/* 언어 라벨이 있는 블록은 첫 줄과 겹치지 않게 위쪽 여백을 조금 더 준다. */
+.code-lang-label + .code-copy-btn + pre {
+  padding-top: 32px;
+}
+
 .code-copy-btn {
   position: absolute;
   top: 8px;
@@ -1186,6 +1281,17 @@
   animation: cursor-blink 1s step-end infinite;
 }
 
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.bubble-row-user .bubble {
+  animation: bubble-in 0.2s ease;
+}
+
 @keyframes cursor-blink {
   50% {
     opacity: 0;
@@ -1293,6 +1399,7 @@
 /* ---------- 입력창 ---------- */
 
 .chat-input-row {
+  position: relative;
   padding: 12px 20px 20px;
 }
 

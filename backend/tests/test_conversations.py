@@ -130,3 +130,31 @@ def test_메시지_재생성_다른_계정_대화는_403(temp_db):
         _회원가입(client_b, "계정L")
         r = client_b.post(f"/api/conversations/{대화_id}/messages/retry", data={"model": "기본"})
         assert r.status_code == 403
+
+
+def test_대화_이름_변경(client):
+    _회원가입(client, "사용자M")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+
+    r = client.patch(f"/api/conversations/{대화_id}", json={"제목": "  새 이름  "})
+    assert r.status_code == 200
+    목록 = client.get("/api/conversations").json()
+    assert next(c for c in 목록 if c["id"] == 대화_id)["제목"] == "새 이름"
+
+
+def test_대화_이름_변경_빈_제목은_400(client):
+    _회원가입(client, "사용자N")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    r = client.patch(f"/api/conversations/{대화_id}", json={"제목": "   "})
+    assert r.status_code == 400
+
+
+def test_대화_이름_변경_다른_계정은_403(temp_db):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+
+    with TestClient(app) as a, TestClient(app) as b:
+        _회원가입(a, "계정P")
+        대화_id = a.post("/api/conversations", json={}).json()["id"]
+        _회원가입(b, "계정Q")
+        assert b.patch(f"/api/conversations/{대화_id}", json={"제목": "탈취"}).status_code == 403

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { isValidElement, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -41,6 +41,15 @@ const 예시_프롬프트_목록 = [
 ]
 
 const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp,.png,.jpg,.jpeg,.gif,.webp'
+const _허용_확장자_목록 = 허용_확장자.split(',')
+
+function 허용된_파일인가(f: File): boolean {
+  const 이름 = f.name.toLowerCase()
+  return _허용_확장자_목록.some((ext) => 이름.endsWith(ext))
+}
+
+// 스크롤이 바닥에서 이만큼 이내면 "바닥을 보고 있는 중"으로 본다.
+const _바닥_허용_px = 80
 
 // 새로고침해도 마지막에 고른 모델 그대로 유지되도록 로컬에 기억해둔다.
 const _모델_저장키 = 'kpc-chat-model'
@@ -54,6 +63,9 @@ function 저장된_모델_불러오기(): 모델선택 {
 // 블록 자체가 완성됐다면) 바로 눌러 복사할 수 있다.
 function 코드블록({ children }: { children?: ReactNode }) {
   const ref = useRef<HTMLPreElement>(null)
+  // react-markdown은 ```python 같은 펜스를 <pre><code className="language-python">으로 넘긴다.
+  const 코드_요소 = isValidElement(children) ? (children as ReactElement<{ className?: string }>) : null
+  const 언어 = /language-([\w+#-]+)/.exec(코드_요소?.props.className ?? '')?.[1]
   const [복사됨, set복사됨] = useState(false)
 
   async function 복사() {
@@ -70,6 +82,7 @@ function 코드블록({ children }: { children?: ReactNode }) {
 
   return (
     <div className="code-block-wrap">
+      {언어 && <span className="code-lang-label">{언어}</span>}
       <button type="button" className="code-copy-btn" onClick={복사}>
         <Icon name={복사됨 ? 'check' : 'copy'} size={12} />
         {복사됨 ? '복사됨' : '복사'}
@@ -119,6 +132,8 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
   const [최근_생성파일, set최근_생성파일] = useState<생성_파일 | null>(null)
   const [pendingQuestion, setPendingQuestion] = useState<명확화_질문 | null>(null)
   const [모델, set모델] = useState<모델선택>(저장된_모델_불러오기)
+  const [바닥에_있음, set바닥에_있음] = useState(true)
+  const [드래그_중, set드래그_중] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(_모델_저장키, 모델)
@@ -128,6 +143,11 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const 스크롤영역_ref = useRef<HTMLDivElement>(null)
+  // 스트리밍 effect가 최신 값을 읽도록 ref로도 들고 있는다(스크롤 이벤트마다 리렌더 방지).
+  const 바닥_ref = useRef(true)
+  // dragenter/leave가 자식 요소마다 번갈아 발생하므로 깊이를 세어 오버레이 깜빡임을 막는다.
+  const 드래그_깊이_ref = useRef(0)
   // 사용자가 '중단'을 눌러 일부러 스트림을 끊은 경우, streamMessage의 onError가
   // 이걸 진짜 네트워크 오류로 오인해 화면에 "오류: ..."를 띄우지 않도록 구분한다.
   const 중단_중_ref = useRef(false)
@@ -165,9 +185,25 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
     return () => abortRef.current?.abort()
   }, [conversationId])
 
+  // 클로드 앱처럼: 사용자가 위로 스크롤해 지난 내용을 읽는 중이면 새 토큰이 와도
+  // 끌어내리지 않고, 바닥 근처일 때만 따라간다.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
+    if (바닥_ref.current) bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [messages, streamingText, pendingProposal])
+
+  function 스크롤_감지() {
+    const el = 스크롤영역_ref.current
+    if (!el) return
+    const 가까움 = el.scrollHeight - el.scrollTop - el.clientHeight <= _바닥_허용_px
+    바닥_ref.current = 가까움
+    set바닥에_있음(가까움)
+  }
+
+  function 바닥으로(부드럽게 = true) {
+    바닥_ref.current = true
+    set바닥에_있음(true)
+    bottomRef.current?.scrollIntoView({ block: 'end', behavior: 부드럽게 ? 'smooth' : 'auto' })
+  }
 
   // 보내기()/재생성() 둘 다 이벤트 처리는 완전히 같다 — 스트림 소스(신규 전송 vs
   // 재생성)만 다르므로 핸들러 객체를 공유한다.
@@ -223,6 +259,8 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
       setMessages((prev) => [...prev, { role: 'user', content: 표시_메시지 }])
     }
 
+    바닥_ref.current = true
+    set바닥에_있음(true)
     setInputText('')
     setAttachedFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -242,6 +280,50 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
     })
   }
 
+  // 파일을 채팅 화면 어디에나 끌어다 놓아 첨부한다(클로드 앱과 동일한 동작).
+  function 첨부_시도(f: File | undefined) {
+    if (!f) return
+    if (!허용된_파일인가(f)) {
+      setError(`지원하지 않는 파일 형식이에요: ${f.name}`)
+      return
+    }
+    setError(null)
+    setAttachedFile(f)
+  }
+
+  function 드래그_진입(e: React.DragEvent) {
+    if (isStreaming || !e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    드래그_깊이_ref.current += 1
+    set드래그_중(true)
+  }
+
+  function 드래그_이탈(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    드래그_깊이_ref.current = Math.max(0, 드래그_깊이_ref.current - 1)
+    if (드래그_깊이_ref.current === 0) set드래그_중(false)
+  }
+
+  function 드롭(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    드래그_깊이_ref.current = 0
+    set드래그_중(false)
+    if (isStreaming) return
+    첨부_시도(e.dataTransfer.files[0])
+  }
+
+  // 스크린샷을 클립보드에서 바로 붙여넣기 — 이미지가 있을 때만 가로채고 텍스트는 그대로 둔다.
+  function 붙여넣기(e: React.ClipboardEvent) {
+    const 이미지 = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+    if (!이미지) return
+    e.preventDefault()
+    if (isStreaming) return
+    // 클립보드 이미지는 이름이 'image.png'로 고정이라, 여러 번 붙여도 구분되게 시각을 붙인다.
+    const 확장자 = 이미지.type.split('/')[1] || 'png'
+    첨부_시도(new File([이미지], `붙여넣은 이미지-${Date.now()}.${확장자}`, { type: 이미지.type }))
+  }
+
   function 전송(e: React.FormEvent) {
     e.preventDefault()
     보내기(inputText.trim(), attachedFile)
@@ -251,6 +333,8 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
   // 새 사용자 메시지는 추가하지 않는다(서버가 이미 있던 질문을 재사용).
   function 재생성() {
     if (isStreaming) return
+    바닥_ref.current = true
+    set바닥에_있음(true)
     setMessages((prev) => prev.slice(0, -1))
     setPendingProposal(null)
     setPendingQuestion(null)
@@ -324,7 +408,22 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
   }
 
   return (
-    <div className="chat-main">
+    <div
+      className="chat-main"
+      onDragEnter={드래그_진입}
+      onDragOver={(e) => {
+        if (!isStreaming && e.dataTransfer.types.includes('Files')) e.preventDefault()
+      }}
+      onDragLeave={드래그_이탈}
+      onDrop={드롭}
+    >
+      {드래그_중 && (
+        <div className="chat-drop-overlay">
+          <Icon name="paperclip" size={22} />
+          <p>여기에 놓으면 첨부돼요</p>
+          <span>{허용_확장자.replaceAll(',', ' ')}</span>
+        </div>
+      )}
       {연결된_사업_라벨 && (
         <p className="chat-project-caption">
           <Icon name="folder" size={13} />
@@ -332,7 +431,7 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
         </p>
       )}
 
-      <div className="chat-messages">
+      <div className="chat-messages" ref={스크롤영역_ref} onScroll={스크롤_감지}>
        <div className="chat-column">
         {loading && <p className="sidebar-caption">불러오는 중...</p>}
         {!loading && messages.length === 0 && !isStreaming && (
@@ -462,6 +561,11 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
       </div>
 
       <form className="chat-input-row" onSubmit={전송}>
+       {!바닥에_있음 && (
+         <button type="button" className="scroll-bottom-btn" onClick={() => 바닥으로()} aria-label="맨 아래로 이동" title="맨 아래로">
+           <Icon name="arrow-down" size={16} />
+         </button>
+       )}
        <div className="chat-column">
         {attachedFile && (
           <div className="attached-file-chip">
@@ -478,7 +582,7 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
             type="file"
             accept={허용_확장자}
             style={{ display: 'none' }}
-            onChange={(e) => setAttachedFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => 첨부_시도(e.target.files?.[0])}
           />
           <button
             type="button"
@@ -524,6 +628,7 @@ export default function ChatMain({ conversationId, onActivity, 사용자_이름 
             placeholder={듣는중 ? '듣고 있어요...' : '질문을 입력하거나 파일을 첨부하세요'}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
+            onPaste={붙여넣기}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()

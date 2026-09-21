@@ -10,6 +10,7 @@ type Props = {
   onNew: () => void
   onNewWithProject: (사업_id: number) => void
   onDelete: (id: number) => void
+  onRename: (id: number, 제목: string) => Promise<void>
 }
 
 // 백엔드가 주는 생성일시는 타임존 없는 naive ISO 문자열(예: "2026-09-08T05:14:00")이라
@@ -46,12 +47,16 @@ export default function Sidebar({
   onNew,
   onNewWithProject,
   onDelete,
+  onRename,
 }: Props) {
   const [검색어, set검색어] = useState('')
   const [프로젝트패널_열림, set프로젝트패널_열림] = useState(false)
   const [프로젝트_검색어, set프로젝트_검색어] = useState('')
   const [강조_인덱스, set강조_인덱스] = useState(0)
   const [삭제확인_id, set삭제확인_id] = useState<number | null>(null)
+  // 클로드 앱처럼 제목을 그 자리에서 바로 고친다(Enter/포커스 이탈=저장, Escape=취소).
+  const [편집중_id, set편집중_id] = useState<number | null>(null)
+  const [편집_값, set편집_값] = useState('')
 
   const 프로젝트_입력ref = useRef<HTMLInputElement>(null)
   const 프로젝트팝오버_ref = useRef<HTMLDivElement>(null)
@@ -144,12 +149,64 @@ export default function Sidebar({
     return 맵
   }, [일반])
 
+  function 편집_시작(d: 대화) {
+    set편집_값(d.제목 || '')
+    set편집중_id(d.id)
+  }
+
+  async function 편집_확정(d: 대화) {
+    if (편집중_id !== d.id) return
+    const 새제목 = 편집_값.trim()
+    set편집중_id(null)
+    if (!새제목 || 새제목 === (d.제목 ?? '')) return
+    try {
+      await onRename(d.id, 새제목)
+    } catch {
+      // 저장 실패 시 목록이 원래 제목 그대로 남으니 별도 처리 없이 조용히 넘어간다.
+    }
+  }
+
   function 대화_행(d: 대화) {
     const 선택됨 = d.id === currentId
     return (
       <div key={d.id} className={`conv-row ${선택됨 ? 'conv-row-active' : ''}`}>
-        <button className="conv-row-title" onClick={() => onSelect(d.id)}>
-          {d.제목 || `새 대화 (${생성일시_표시(d.생성일시)})`}
+        {편집중_id === d.id ? (
+          <input
+            className="conv-row-edit-input"
+            value={편집_값}
+            maxLength={60}
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => set편집_값(e.target.value)}
+            onBlur={() => 편집_확정(d)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                편집_확정(d)
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                set편집중_id(null)
+              }
+            }}
+            aria-label="대화 제목 편집"
+          />
+        ) : (
+          <button
+            className="conv-row-title"
+            onClick={() => onSelect(d.id)}
+            onDoubleClick={() => 편집_시작(d)}
+            title="더블클릭하여 이름 바꾸기"
+          >
+            {d.제목 || `새 대화 (${생성일시_표시(d.생성일시)})`}
+          </button>
+        )}
+        <button
+          className="conv-row-delete"
+          title="이름 바꾸기"
+          aria-label={`'${d.제목 || '제목 없음'}' 대화 이름 바꾸기`}
+          onClick={() => 편집_시작(d)}
+        >
+          <Icon name="edit" size={14} />
         </button>
         <button
           className="conv-row-delete"
