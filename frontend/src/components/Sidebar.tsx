@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import type { 대화, 프로젝트 } from '../api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { searchConversations, type 대화, type 대화_검색_결과, type 프로젝트 } from '../api'
 import Icon from './Icon'
 
 type Props = {
@@ -60,6 +60,42 @@ export default function Sidebar({
   const [편집_값, set편집_값] = useState('')
 
   const [프로젝트_모두_보기, set프로젝트_모두_보기] = useState(false)
+
+  // 클로드 앱의 대화 검색 — 제목뿐 아니라 대화 내용 전체를 서버에서 훑는다. 디바운스
+  // 대기 중에는(또는 서버 결과가 아직 없으면) 아래 필터된_목록/필터된_프로젝트로
+  // 즉석 클라이언트 필터링을 먼저 보여주고, 결과가 오면 그걸로 바꿔 보여준다.
+  const [검색_결과, set검색_결과] = useState<대화_검색_결과[] | null>(null)
+  const [검색_로딩, set검색_로딩] = useState(false)
+  const 검색_토큰_ref = useRef(0)
+
+  useEffect(() => {
+    const q = 검색어.trim()
+    if (!q) {
+      set검색_결과(null)
+      set검색_로딩(false)
+      return
+    }
+    const 토큰 = ++검색_토큰_ref.current
+    set검색_로딩(true)
+    const 타이머 = window.setTimeout(() => {
+      searchConversations(q)
+        .then((결과) => {
+          if (검색_토큰_ref.current === 토큰) {
+            set검색_결과(결과)
+            set검색_로딩(false)
+          }
+        })
+        .catch(() => {
+          if (검색_토큰_ref.current === 토큰) set검색_로딩(false)
+        })
+    }, 300)
+    return () => window.clearTimeout(타이머)
+  }, [검색어])
+
+  function 검색결과_선택(대화_id: number) {
+    onSelect(대화_id)
+    set검색어('')
+  }
 
   const 필터된_목록 = useMemo(() => {
     const q = 검색어.trim().toLowerCase()
@@ -180,58 +216,84 @@ export default function Sidebar({
       </div>
 
       <div className="conv-list">
-        <div className="conv-group">
-          <div className="conv-group-head">
-            <p className="conv-group-label">
-              <Icon name="folder" size={12} />
-              프로젝트
-            </p>
-            <button
-              type="button"
-              className="conv-group-add"
-              onClick={onNewProject}
-              title="새 프로젝트"
-              aria-label="새 프로젝트 만들기"
-            >
-              <Icon name="plus" size={13} />
-            </button>
+        {검색_결과 !== null ? (
+          <div className="conv-group">
+            <p className="conv-group-label">검색 결과{!검색_로딩 && ` (${검색_결과.length})`}</p>
+            {검색_로딩 && <p className="sidebar-caption">검색하는 중...</p>}
+            {!검색_로딩 && 검색_결과.length === 0 && (
+              <p className="sidebar-caption">일치하는 대화가 없습니다.</p>
+            )}
+            {검색_결과.map((r) => (
+              <button
+                key={r.대화_id}
+                type="button"
+                className="search-result-row"
+                onClick={() => 검색결과_선택(r.대화_id)}
+              >
+                <span className="search-result-title-row">
+                  <span className="search-result-title">{r.제목 || '새 대화'}</span>
+                  {r.프로젝트_이름 && <span className="conv-row-project-tag">{r.프로젝트_이름}</span>}
+                </span>
+                {r.미리보기 && <span className="search-result-snippet">{r.미리보기}</span>}
+              </button>
+            ))}
           </div>
-          {projects.length === 0 && (
-            <button type="button" className="project-empty-cta" onClick={onNewProject}>
-              프로젝트를 만들어 지침과 자료를 모아보세요
-            </button>
-          )}
-          {(프로젝트_모두_보기 ? 필터된_프로젝트 : 필터된_프로젝트.slice(0, 6)).map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`project-row ${p.id === 현재_프로젝트_id ? 'project-row-active' : ''}`}
-              onClick={() => onOpenProject(p.id)}
-              title={p.설명 || p.이름}
-            >
-              <span className="project-row-name">{p.이름}</span>
-              {p.지식수 > 0 && <Icon name="file" size={12} />}
-              <span className="project-row-count">{p.대화수}</span>
-            </button>
-          ))}
-          {필터된_프로젝트.length > 6 && (
-            <button type="button" className="project-more-btn" onClick={() => set프로젝트_모두_보기((v) => !v)}>
-              {프로젝트_모두_보기 ? '접기' : `모두 보기 (${필터된_프로젝트.length})`}
-            </button>
-          )}
-        </div>
-
-        {필터된_목록.length === 0 && <p className="sidebar-caption">검색 결과가 없습니다.</p>}
-        {_날짜_버킷_순서.map((버킷) => {
-          const 목록 = 일반_날짜별.get(버킷)
-          if (!목록 || 목록.length === 0) return null
-          return (
-            <div key={버킷} className="conv-group">
-              <p className="conv-group-label">{버킷}</p>
-              {목록.map(대화_행)}
+        ) : (
+          <>
+            <div className="conv-group">
+              <div className="conv-group-head">
+                <p className="conv-group-label">
+                  <Icon name="folder" size={12} />
+                  프로젝트
+                </p>
+                <button
+                  type="button"
+                  className="conv-group-add"
+                  onClick={onNewProject}
+                  title="새 프로젝트"
+                  aria-label="새 프로젝트 만들기"
+                >
+                  <Icon name="plus" size={13} />
+                </button>
+              </div>
+              {projects.length === 0 && (
+                <button type="button" className="project-empty-cta" onClick={onNewProject}>
+                  프로젝트를 만들어 지침과 자료를 모아보세요
+                </button>
+              )}
+              {(프로젝트_모두_보기 ? 필터된_프로젝트 : 필터된_프로젝트.slice(0, 6)).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`project-row ${p.id === 현재_프로젝트_id ? 'project-row-active' : ''}`}
+                  onClick={() => onOpenProject(p.id)}
+                  title={p.설명 || p.이름}
+                >
+                  <span className="project-row-name">{p.이름}</span>
+                  {p.지식수 > 0 && <Icon name="file" size={12} />}
+                  <span className="project-row-count">{p.대화수}</span>
+                </button>
+              ))}
+              {필터된_프로젝트.length > 6 && (
+                <button type="button" className="project-more-btn" onClick={() => set프로젝트_모두_보기((v) => !v)}>
+                  {프로젝트_모두_보기 ? '접기' : `모두 보기 (${필터된_프로젝트.length})`}
+                </button>
+              )}
             </div>
-          )
-        })}
+
+            {필터된_목록.length === 0 && <p className="sidebar-caption">검색 결과가 없습니다.</p>}
+            {_날짜_버킷_순서.map((버킷) => {
+              const 목록 = 일반_날짜별.get(버킷)
+              if (!목록 || 목록.length === 0) return null
+              return (
+                <div key={버킷} className="conv-group">
+                  <p className="conv-group-label">{버킷}</p>
+                  {목록.map(대화_행)}
+                </div>
+              )
+            })}
+          </>
+        )}
       </div>
 
       {삭제확인_id !== null && (

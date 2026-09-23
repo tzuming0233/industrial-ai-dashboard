@@ -861,6 +861,72 @@ def 채팅기록_마지막_삭제(대화_id: int) -> None:
         conn.close()
 
 
+def 채팅기록_인덱스_이후_삭제(대화_id: int, 인덱스: int) -> None:
+    """채팅기록_불러오기가 주는 순서(0-based) 기준으로 그 인덱스 이후 메시지를 전부 지운다.
+
+    클로드 앱의 '메시지 편집'에 쓴다 — 과거 사용자 메시지를 고쳐서 다시 보내면 그 뒤에
+    있던 오래된 답변·후속 대화는 버리고 고친 질문부터 새로 이어간다."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        ids = [row[0] for row in conn.execute(
+            "SELECT id FROM 채팅기록 WHERE 대화_id = ? ORDER BY id", (대화_id,)
+        ).fetchall()]
+        지울_id들 = ids[인덱스:]
+        if 지울_id들:
+            conn.executemany("DELETE FROM 채팅기록 WHERE id = ?", [(i,) for i in 지울_id들])
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _LIKE_이스케이프(값: str) -> str:
+    return 값.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def 대화_검색(사용자_id: int | None, 검색어: str, 최대개수: int = 30) -> list[dict]:
+    """사이드바 검색 — 제목뿐 아니라 채팅 내용 전문까지 훑는다(Claude.ai의 대화 검색과 동일).
+    대화당 검색어가 등장하는 가장 최근 메시지 하나만 미리보기로 돌려준다."""
+    패턴 = f"%{_LIKE_이스케이프(검색어)}%"
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        본문_매치 = conn.execute(
+            """
+            SELECT c.id AS 대화_id, c.제목, c.마지막_활동일시, c.프로젝트_id,
+                   m.content AS 미리보기
+            FROM 채팅기록 m
+            JOIN 대화 c ON c.id = m.대화_id
+            WHERE (c.사용자_id = ? OR c.사용자_id IS NULL)
+              AND m.content LIKE ? ESCAPE '\\'
+              AND m.id = (
+                  SELECT MAX(m2.id) FROM 채팅기록 m2
+                  WHERE m2.대화_id = m.대화_id AND m2.content LIKE ? ESCAPE '\\'
+              )
+            ORDER BY c.마지막_활동일시 DESC
+            LIMIT ?
+            """,
+            (사용자_id, 패턴, 패턴, 최대개수),
+        ).fetchall()
+        결과 = [dict(row) for row in 본문_매치]
+
+        제목_매치 = conn.execute(
+            "SELECT id AS 대화_id, 제목, 마지막_활동일시, 프로젝트_id FROM 대화 "
+            "WHERE (사용자_id = ? OR 사용자_id IS NULL) AND 제목 LIKE ? ESCAPE '\\'",
+            (사용자_id, 패턴),
+        ).fetchall()
+        이미_있음 = {r["대화_id"] for r in 결과}
+        for row in 제목_매치:
+            d = dict(row)
+            if d["대화_id"] not in 이미_있음:
+                d["미리보기"] = None
+                결과.append(d)
+
+        결과.sort(key=lambda r: r["마지막_활동일시"], reverse=True)
+        return 결과[:최대개수]
+    finally:
+        conn.close()
+
+
 def 채팅기록_저장(대화_id: int, role: str, content: str) -> None:
     conn = sqlite3.connect(DB_PATH)
     try:

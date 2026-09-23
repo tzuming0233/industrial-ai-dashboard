@@ -5,6 +5,7 @@ import {
   applyProposal,
   cancelProposal,
   downloadGeneratedFile,
+  editMessage,
   fileDownloadUrl,
   getMessages,
   retryMessage,
@@ -98,6 +99,73 @@ function 코드블록({ children }: { children?: ReactNode }) {
 
 const 마크다운_컴포넌트 = { pre: 코드블록 }
 
+// 클로드 앱의 '메시지 편집' 입력창 — 사용자 말풍선 자리에서 그대로 고쳐 다시 보낸다.
+function 사용자_메시지_편집기({
+  초기값,
+  비활성,
+  onSubmit,
+  onCancel,
+}: {
+  초기값: string
+  비활성: boolean
+  onSubmit: (값: string) => void
+  onCancel: () => void
+}) {
+  const [값, set값] = useState(초기값)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+    // 마운트 시 한 번만 — 이후 높이 조절은 onChange 핸들러가 담당한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function 제출() {
+    const 다듬은값 = 값.trim()
+    if (!다듬은값 || 비활성) return
+    onSubmit(다듬은값)
+  }
+
+  return (
+    <div className="user-msg-edit">
+      <textarea
+        ref={ref}
+        className="text-input user-msg-edit-input"
+        value={값}
+        onChange={(e) => {
+          set값(e.target.value)
+          e.target.style.height = 'auto'
+          e.target.style.height = `${e.target.scrollHeight}px`
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            제출()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+          }
+        }}
+        disabled={비활성}
+        rows={1}
+      />
+      <div className="user-msg-edit-actions">
+        <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={비활성}>
+          취소
+        </button>
+        <button type="button" className="btn btn-primary" onClick={제출} disabled={비활성 || !값.trim()}>
+          저장하고 다시 전송
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // 답변 전체를 클로드 앱처럼 한 번에 복사 — 스트리밍이 끝난 완성된 메시지에만 붙인다.
 function 답변_복사_버튼({ text }: { text: string }) {
   const [복사됨, set복사됨] = useState(false)
@@ -146,6 +214,8 @@ export default function ChatMain({
   const [모델, set모델] = useState<모델선택>(저장된_모델_불러오기)
   const [바닥에_있음, set바닥에_있음] = useState(true)
   const [드래그_중, set드래그_중] = useState(false)
+  // 값이 있으면 그 인덱스의 사용자 메시지가 편집 중 — 한 번에 하나만 편집한다.
+  const [편집중_index, set편집중_index] = useState<number | null>(null)
 
   useEffect(() => {
     localStorage.setItem(_모델_저장키, 모델)
@@ -185,6 +255,7 @@ export default function ChatMain({
     setStreamingText('')
     setIsStreaming(false)
     set최근_생성파일(null)
+    set편집중_index(null)
     abortRef.current?.abort()
 
     getMessages(conversationId)
@@ -266,6 +337,7 @@ export default function ChatMain({
   function 보내기(질문: string, 파일: File | null) {
     if (isStreaming) return
     if (!질문 && !파일) return
+    set편집중_index(null)
 
     let 표시_메시지 = 질문
     if (파일) 표시_메시지 = (표시_메시지 + `\n\n📎 ${파일.name}`).trim()
@@ -355,6 +427,7 @@ export default function ChatMain({
   // 새 사용자 메시지는 추가하지 않는다(서버가 이미 있던 질문을 재사용).
   function 재생성() {
     if (isStreaming) return
+    set편집중_index(null)
     바닥_ref.current = true
     set바닥에_있음(true)
     setMessages((prev) => prev.slice(0, -1))
@@ -370,6 +443,30 @@ export default function ChatMain({
     abortRef.current = controller
 
     retryMessage(conversationId, 스트림_핸들러_생성(), controller.signal, 모델).catch(() => {
+      /* onError 핸들러가 이미 상태를 처리함 */
+    })
+  }
+
+  // 클로드 앱의 '메시지 편집' — 과거 사용자 메시지를 고쳐서 다시 보내면, 그 뒤에 있던
+  // 답변·후속 대화는 화면에서도 서버에서도 전부 버려지고 고친 질문부터 새로 이어간다.
+  function 편집_제출(인덱스: number, 새텍스트: string) {
+    if (isStreaming) return
+    set편집중_index(null)
+    바닥_ref.current = true
+    set바닥에_있음(true)
+    setMessages((prev) => [...prev.slice(0, 인덱스), { role: 'user', content: 새텍스트 }])
+    setPendingProposal(null)
+    setPendingQuestion(null)
+    setError(null)
+    setStreamingStatus(null)
+    setStreamingText('')
+    set최근_생성파일(null)
+    setIsStreaming(true)
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    editMessage(conversationId, 인덱스, 새텍스트, 스트림_핸들러_생성(), controller.signal, 모델).catch(() => {
       /* onError 핸들러가 이미 상태를 처리함 */
     })
   }
@@ -481,11 +578,39 @@ export default function ChatMain({
 
         {messages.map((m, i) => {
           if (m.role === 'user') {
+            // 편집은 첨부 파일 표시가 없는 메시지에만 — 원본 첨부 바이트는 저장돼 있지
+            // 않아 재생성처럼 다시 첨부해 보낼 수 없다.
+            const 편집_가능 = !m.content.includes('📎') && !isStreaming
+            if (편집중_index === i) {
+              return (
+                <div key={i} className="bubble-row bubble-row-user">
+                  <사용자_메시지_편집기
+                    초기값={m.content}
+                    비활성={isStreaming}
+                    onSubmit={(값) => 편집_제출(i, 값)}
+                    onCancel={() => set편집중_index(null)}
+                  />
+                </div>
+              )
+            }
             return (
               <div key={i} className="bubble-row bubble-row-user">
                 <div className="bubble">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                 </div>
+                {편집_가능 && (
+                  <div className="user-msg-actions">
+                    <button
+                      type="button"
+                      className="assistant-action-btn"
+                      onClick={() => set편집중_index(i)}
+                      title="메시지 편집"
+                    >
+                      <Icon name="edit" size={13} />
+                      편집
+                    </button>
+                  </div>
+                )}
               </div>
             )
           }

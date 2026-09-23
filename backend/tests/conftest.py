@@ -18,6 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+import ai_agent  # noqa: E402
 from backend.app import auth, chat, repository as repo  # noqa: E402
 
 
@@ -46,6 +47,11 @@ def temp_db(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     _사업현황_테이블_생성(db_path)
     monkeypatch.setattr(repo, "DB_PATH", db_path)
+    # ai_agent.py는 repo와 별개의 DB_PATH 전역을 갖고 있어서(고정컨텍스트 노트 조회 등),
+    # 이것도 같이 옮겨두지 않으면 실제로 스트리밍까지 도달하는 테스트가 운영 DB 파일을
+    # 그대로 열어버린다 — 지금까지의 테스트는 대부분 검증 단계에서 먼저 끝나 이 경로를
+    # 타지 않았을 뿐이다.
+    monkeypatch.setattr(ai_agent, "DB_PATH", db_path)
 
     repo.DB_준비()
     repo.계정_DB_준비()

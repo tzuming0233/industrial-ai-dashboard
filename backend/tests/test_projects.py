@@ -119,11 +119,9 @@ def test_대화_메시지_응답에_프로젝트_정보(client):
     assert client.get(f"/api/conversations/{일반_id}/messages").json()["프로젝트"] is None
 
 
-def test_프로젝트_시스템_텍스트에_지침과_지식이_들어간다(client, temp_db, monkeypatch):
+def test_프로젝트_시스템_텍스트에_지침과_지식이_들어간다(client, temp_db):
     from backend.app import projects, repository as repo
     import ai_agent
-
-    monkeypatch.setattr(ai_agent, "DB_PATH", temp_db)
 
     _회원가입(client, "시스템A")
     프로젝트_id = client.post("/api/projects", json={"이름": "정산", "지침": "항상 표로 답하라"}).json()["id"]

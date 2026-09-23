@@ -362,25 +362,17 @@ type 스트림_done = {
   질문_대기: 명확화_질문 | null
 }
 
-export function streamMessage(
-  대화_id: number,
-  message: string,
-  file: File | null,
-  handlers: {
-    onToken: (text: string) => void
-    onStatus?: (message: string) => void
-    onDone: (data: 스트림_done) => void
-    onError: (message: string) => void
-  },
-  signal?: AbortSignal,
-  model?: string,
-): Promise<void> {
-  const form = new FormData()
-  form.append('message', message)
-  if (file) form.append('file', file)
-  if (model) form.append('model', model)
+type 스트림_핸들러 = {
+  onToken: (text: string) => void
+  onStatus?: (message: string) => void
+  onDone: (data: 스트림_done) => void
+  onError: (message: string) => void
+}
 
-  return fetchEventSource(`${API_BASE}/api/conversations/${대화_id}/messages/stream`, {
+// streamMessage/retryMessage/editMessage 셋 다 SSE 이벤트 처리는 완전히 같고, 요청 경로와
+// body만 다르다 — 공용 부분을 여기 하나로 모은다.
+function _스트림_요청(path: string, form: FormData, handlers: 스트림_핸들러, signal?: AbortSignal): Promise<void> {
+  return fetchEventSource(`${API_BASE}${path}`, {
     method: 'POST',
     body: form,
     credentials: 'include',
@@ -402,43 +394,61 @@ export function streamMessage(
   })
 }
 
-// 클로드 앱의 '재생성' 버튼 — streamMessage와 이벤트 처리는 완전히 같고, 새
-// 사용자 메시지를 보내지 않는다는 점만 다르다(서버가 마지막 질문을 재사용).
+export function streamMessage(
+  대화_id: number,
+  message: string,
+  file: File | null,
+  handlers: 스트림_핸들러,
+  signal?: AbortSignal,
+  model?: string,
+): Promise<void> {
+  const form = new FormData()
+  form.append('message', message)
+  if (file) form.append('file', file)
+  if (model) form.append('model', model)
+  return _스트림_요청(`/api/conversations/${대화_id}/messages/stream`, form, handlers, signal)
+}
+
+// 클로드 앱의 '재생성' 버튼 — 새 사용자 메시지를 보내지 않는다는 점만 다르다
+// (서버가 마지막 질문을 재사용).
 export function retryMessage(
   대화_id: number,
-  handlers: {
-    onToken: (text: string) => void
-    onStatus?: (message: string) => void
-    onDone: (data: 스트림_done) => void
-    onError: (message: string) => void
-  },
+  handlers: 스트림_핸들러,
   signal?: AbortSignal,
   model?: string,
 ): Promise<void> {
   const form = new FormData()
   if (model) form.append('model', model)
-
-  return fetchEventSource(`${API_BASE}/api/conversations/${대화_id}/messages/retry`, {
-    method: 'POST',
-    body: form,
-    credentials: 'include',
-    openWhenHidden: true,
-    signal,
-    async onopen(res) {
-      if (!res.ok) throw new Error(`서버 응답 오류: ${res.status}`)
-    },
-    onmessage(ev) {
-      if (ev.event === 'token') handlers.onToken((JSON.parse(ev.data) as { text: string }).text)
-      else if (ev.event === 'status') handlers.onStatus?.((JSON.parse(ev.data) as { message: string }).message)
-      else if (ev.event === 'done') handlers.onDone(JSON.parse(ev.data) as 스트림_done)
-      else if (ev.event === 'error') handlers.onError((JSON.parse(ev.data) as { message: string }).message)
-    },
-    onerror(err) {
-      handlers.onError(err instanceof Error ? err.message : String(err))
-      throw err
-    },
-  })
+  return _스트림_요청(`/api/conversations/${대화_id}/messages/retry`, form, handlers, signal)
 }
+
+// 클로드 앱의 '메시지 편집' — 과거 사용자 메시지(0-based 인덱스)를 고쳐서 다시 보내면
+// 그 뒤 대화는 버려지고 고친 질문부터 새로 이어간다.
+export function editMessage(
+  대화_id: number,
+  index: number,
+  message: string,
+  handlers: 스트림_핸들러,
+  signal?: AbortSignal,
+  model?: string,
+): Promise<void> {
+  const form = new FormData()
+  form.append('index', String(index))
+  form.append('message', message)
+  if (model) form.append('model', model)
+  return _스트림_요청(`/api/conversations/${대화_id}/messages/edit`, form, handlers, signal)
+}
+
+export type 대화_검색_결과 = {
+  대화_id: number
+  제목: string | null
+  마지막_활동일시: string
+  프로젝트_이름: string | null
+  미리보기: string | null
+}
+
+export const searchConversations = (q: string) =>
+  api<대화_검색_결과[]>(`/api/conversations/search?q=${encodeURIComponent(q)}`)
 
 // ---------------- 프로젝트 ----------------
 

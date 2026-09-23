@@ -333,6 +333,42 @@ def 대화_생성_엔드포인트(요청: _대화_생성_요청, 사용자: dict
     return {"id": repo.대화_생성(사업_id=요청.사업_id, 사용자_id=사용자["id"], 프로젝트_id=요청.프로젝트_id)}
 
 
+def _검색_스니펫(내용: str | None, 검색어: str, 반경: int = 60) -> str | None:
+    """검색어 주변만 잘라 미리보기로 쓴다 — 긴 첨부 문서 내용을 통째로 보여주지 않는다."""
+    if not 내용:
+        return None
+    위치 = 내용.lower().find(검색어.lower())
+    if 위치 < 0:
+        return (내용[:120] + "...") if len(내용) > 120 else 내용
+    시작 = max(0, 위치 - 반경)
+    끝 = min(len(내용), 위치 + len(검색어) + 반경)
+    조각 = 내용[시작:끝].replace("\n", " ").strip()
+    if 시작 > 0:
+        조각 = "..." + 조각
+    if 끝 < len(내용):
+        조각 = 조각 + "..."
+    return 조각
+
+
+@router.get("/api/conversations/search")
+def 대화_검색(q: str = "", 사용자: dict = Depends(auth.현재_사용자)):
+    """사이드바 검색창 — 제목만이 아니라 대화 내용 전체를 훑는다(클로드 앱의 대화 검색)."""
+    검색어 = q.strip()
+    if len(검색어) < 2:
+        return []
+    프로젝트_이름_맵 = {p["id"]: p["이름"] for p in repo.프로젝트_목록_불러오기(사용자["id"])}
+    return [
+        {
+            "대화_id": r["대화_id"],
+            "제목": r["제목"],
+            "마지막_활동일시": r["마지막_활동일시"],
+            "프로젝트_이름": 프로젝트_이름_맵.get(r["프로젝트_id"]),
+            "미리보기": _검색_스니펫(r.get("미리보기"), 검색어),
+        }
+        for r in repo.대화_검색(사용자["id"], 검색어)
+    ]
+
+
 @router.delete("/api/conversations/{conversation_id}")
 def 대화_삭제_엔드포인트(conversation_id: int, 사용자: dict = Depends(auth.현재_사용자)):
     # Starlette의 경로 파라미터 매칭 정규식이 ASCII만 인식해서(Anthropic tool_use의
@@ -675,6 +711,47 @@ async def 메시지_스트림(
                 yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템)
             else:
                 yield _sse("done", {"text": "", "제안": None, "action_token": None})
+        except Exception as e:
+            yield _sse("error", {"message": str(e)})
+
+    return StreamingResponse(
+        이벤트_스트림(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/api/conversations/{conversation_id}/messages/edit")
+async def 메시지_수정_재전송(
+    conversation_id: int, index: int = Form(...), message: str = Form(...),
+    model: str = Form("기본"), 사용자: dict = Depends(auth.현재_사용자),
+):
+    """클로드 앱의 '메시지 편집' — 과거 사용자 메시지를 고쳐서 다시 보내면, 그 뒤에 있던
+    답변·후속 대화는 전부 버리고 고친 질문부터 새로 이어간다(retry와 달리 임의의 과거
+    메시지를 대상으로 할 수 있고, 텍스트 자체를 바꿀 수 있다는 점이 다르다)."""
+    대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
+    질문 = (message or "").strip()
+    if not 질문:
+        raise HTTPException(status_code=400, detail="수정할 내용을 입력해주세요.")
+    모델_선택 = model if model in ai_agent.모델_옵션 else "기본"
+
+    기록 = repo.채팅기록_불러오기(대화_id)
+    if not (0 <= index < len(기록)) or 기록[index]["role"] != "user":
+        raise HTTPException(status_code=400, detail="수정할 메시지를 찾을 수 없습니다.")
+
+    이전_기록 = 기록[:index]
+    repo.채팅기록_인덱스_이후_삭제(대화_id, index)
+    repo.채팅기록_저장(대화_id, "user", 질문)
+
+    전체_df = repo.사업현황_불러오기()
+    현재_대화 = repo.대화_조회(대화_id)
+    프로젝트_컨텍스트, 프로젝트_시스템 = _대화_문맥(현재_대화, 전체_df)
+    API용_기록 = _API용_기록_구성(대화_id, 이전_기록)
+
+    def 이벤트_스트림():
+        try:
+            yield from _일반_질문_스트림(대화_id, 질문, 프로젝트_컨텍스트, API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템)
         except Exception as e:
             yield _sse("error", {"message": str(e)})
 

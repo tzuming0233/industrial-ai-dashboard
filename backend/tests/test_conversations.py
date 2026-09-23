@@ -158,3 +158,116 @@ def test_대화_이름_변경_다른_계정은_403(temp_db):
         대화_id = a.post("/api/conversations", json={}).json()["id"]
         _회원가입(b, "계정Q")
         assert b.patch(f"/api/conversations/{대화_id}", json={"제목": "탈취"}).status_code == 403
+
+
+def test_메시지_편집_이후_대화를_버리고_새로_이어간다(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "편집A")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화_id, "user", "원래 질문")
+    repo.채팅기록_저장(대화_id, "assistant", "원래 답변")
+    repo.채팅기록_저장(대화_id, "user", "후속 질문")
+    repo.채팅기록_저장(대화_id, "assistant", "후속 답변")
+
+    with client.stream(
+        "POST", f"/api/conversations/{대화_id}/messages/edit",
+        data={"index": "0", "message": "고친 질문", "model": "기본"},
+    ) as resp:
+        assert resp.status_code == 200
+        본문 = "".join(resp.iter_text())
+    assert "event: done" in 본문 or "event: error" in 본문
+
+    메시지들 = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"]
+    assert 메시지들[0] == {"role": "user", "content": "고친 질문"}
+    assert len(메시지들) == 2
+    assert 메시지들[1]["role"] == "assistant"
+
+
+def test_메시지_편집_빈_텍스트는_400(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "편집B")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화_id, "user", "질문")
+    r = client.post(
+        f"/api/conversations/{대화_id}/messages/edit",
+        data={"index": "0", "message": "   ", "model": "기본"},
+    )
+    assert r.status_code == 400
+
+
+def test_메시지_편집_존재하지_않거나_assistant_인덱스는_400(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "편집C")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화_id, "user", "질문")
+    repo.채팅기록_저장(대화_id, "assistant", "답변")
+
+    r = client.post(
+        f"/api/conversations/{대화_id}/messages/edit",
+        data={"index": "1", "message": "고친 답변?", "model": "기본"},
+    )
+    assert r.status_code == 400
+
+    r = client.post(
+        f"/api/conversations/{대화_id}/messages/edit",
+        data={"index": "5", "message": "없는 인덱스", "model": "기본"},
+    )
+    assert r.status_code == 400
+
+
+def test_메시지_편집_다른_계정_대화는_403(temp_db):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+
+    with TestClient(app) as a, TestClient(app) as b:
+        _회원가입(a, "편집D")
+        대화_id = a.post("/api/conversations", json={}).json()["id"]
+        _회원가입(b, "편집E")
+        r = b.post(
+            f"/api/conversations/{대화_id}/messages/edit",
+            data={"index": "0", "message": "탈취 시도", "model": "기본"},
+        )
+        assert r.status_code == 403
+
+
+def test_대화_검색_내용과_제목_모두_찾는다(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "검색A")
+    대화1 = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화1, "user", "가나전자 출장비 정산 문의")
+    repo.채팅기록_저장(대화1, "assistant", "출장비는 실비 정산입니다.")
+    대화2 = client.post("/api/conversations", json={}).json()["id"]
+    repo.대화_제목_설정(대화2, "가나전자 계약 검토")
+    대화3 = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화3, "user", "전혀 관련 없는 질문")
+
+    r = client.get("/api/conversations/search", params={"q": "가나전자"})
+    assert r.status_code == 200
+    결과 = r.json()
+    대화_id들 = {row["대화_id"] for row in 결과}
+    assert 대화_id들 == {대화1, 대화2}
+    본문매치 = next(row for row in 결과 if row["대화_id"] == 대화1)
+    assert "가나전자" in 본문매치["미리보기"]
+
+
+def test_대화_검색_짧은_검색어는_빈_목록(client):
+    _회원가입(client, "검색B")
+    assert client.get("/api/conversations/search", params={"q": "가"}).json() == []
+    assert client.get("/api/conversations/search", params={"q": ""}).json() == []
+
+
+def test_대화_검색_다른_계정_대화는_안_보임(temp_db):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app import repository as repo
+
+    with TestClient(app) as a, TestClient(app) as b:
+        _회원가입(a, "검색C")
+        대화_id = a.post("/api/conversations", json={}).json()["id"]
+        repo.채팅기록_저장(대화_id, "user", "비공개 키워드입니다")
+        _회원가입(b, "검색D")
+        assert b.get("/api/conversations/search", params={"q": "비공개"}).json() == []
