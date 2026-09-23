@@ -1,3 +1,6 @@
+import sqlite3
+
+
 def _회원가입(client, 이름: str, 비밀번호: str = "충분히긴비밀번호1"):
     r = client.post("/api/signup", json={"이름": 이름, "비밀번호": 비밀번호})
     assert r.status_code == 200, r.text
@@ -179,7 +182,7 @@ def test_메시지_편집_이후_대화를_버리고_새로_이어간다(client,
     assert "event: done" in 본문 or "event: error" in 본문
 
     메시지들 = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"]
-    assert 메시지들[0] == {"role": "user", "content": "고친 질문"}
+    assert (메시지들[0]["role"], 메시지들[0]["content"]) == ("user", "고친 질문")
     assert len(메시지들) == 2
     assert 메시지들[1]["role"] == "assistant"
 
@@ -271,3 +274,92 @@ def test_대화_검색_다른_계정_대화는_안_보임(temp_db):
         repo.채팅기록_저장(대화_id, "user", "비공개 키워드입니다")
         _회원가입(b, "검색D")
         assert b.get("/api/conversations/search", params={"q": "비공개"}).json() == []
+
+
+def test_메시지_피드백_저장_수정_취소(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "피드백A")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화_id, "user", "질문")
+    repo.채팅기록_저장(대화_id, "assistant", "답변")
+    메시지_id = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"][1]["id"]
+
+    r = client.post(f"/api/conversations/{대화_id}/messages/{메시지_id}/feedback", json={"rating": "up"})
+    assert r.status_code == 200
+    메시지들 = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"]
+    assert 메시지들[1]["rating"] == "up"
+
+    client.post(f"/api/conversations/{대화_id}/messages/{메시지_id}/feedback", json={"rating": "down"})
+    메시지들 = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"]
+    assert 메시지들[1]["rating"] == "down"
+
+    client.post(f"/api/conversations/{대화_id}/messages/{메시지_id}/feedback", json={"rating": None})
+    메시지들 = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"]
+    assert 메시지들[1]["rating"] is None
+
+
+def test_메시지_피드백_user_메시지는_400(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "피드백B")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화_id, "user", "질문")
+    메시지_id = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"][0]["id"]
+    r = client.post(f"/api/conversations/{대화_id}/messages/{메시지_id}/feedback", json={"rating": "up"})
+    assert r.status_code == 400
+
+
+def test_메시지_피드백_잘못된_값은_400(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "피드백C")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화_id, "assistant", "답변")
+    메시지_id = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"][0]["id"]
+    r = client.post(f"/api/conversations/{대화_id}/messages/{메시지_id}/feedback", json={"rating": "별로"})
+    assert r.status_code == 400
+
+
+def test_메시지_피드백_존재하지_않는_메시지는_404(client):
+    _회원가입(client, "피드백D")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{대화_id}/messages/9999/feedback", json={"rating": "up"})
+    assert r.status_code == 404
+
+
+def test_메시지_피드백_다른_계정_대화는_403(temp_db):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app import repository as repo
+
+    with TestClient(app) as a, TestClient(app) as b:
+        _회원가입(a, "피드백E")
+        대화_id = a.post("/api/conversations", json={}).json()["id"]
+        repo.채팅기록_저장(대화_id, "assistant", "답변")
+        메시지_id = a.get(f"/api/conversations/{대화_id}/messages").json()["메시지"][0]["id"]
+        _회원가입(b, "피드백F")
+        r = b.post(f"/api/conversations/{대화_id}/messages/{메시지_id}/feedback", json={"rating": "up"})
+        assert r.status_code == 403
+
+
+def test_메시지_편집으로_지워진_메시지의_피드백도_함께_지워진다(client, temp_db):
+    from backend.app import repository as repo
+
+    _회원가입(client, "피드백G")
+    대화_id = client.post("/api/conversations", json={}).json()["id"]
+    repo.채팅기록_저장(대화_id, "user", "질문")
+    repo.채팅기록_저장(대화_id, "assistant", "답변")
+    메시지_id = client.get(f"/api/conversations/{대화_id}/messages").json()["메시지"][1]["id"]
+    client.post(f"/api/conversations/{대화_id}/messages/{메시지_id}/feedback", json={"rating": "up"})
+
+    with client.stream(
+        "POST", f"/api/conversations/{대화_id}/messages/edit",
+        data={"index": "0", "message": "고친 질문", "model": "기본"},
+    ) as resp:
+        "".join(resp.iter_text())
+
+    conn = sqlite3.connect(temp_db)
+    남은_피드백 = conn.execute("SELECT COUNT(*) FROM 메시지_피드백 WHERE 메시지_id = ?", (메시지_id,)).fetchone()[0]
+    conn.close()
+    assert 남은_피드백 == 0

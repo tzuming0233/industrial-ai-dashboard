@@ -71,6 +71,12 @@ function App() {
   // 사이드 채팅에서 메시지 전송·제안 적용/취소가 끝날 때마다 증가 — 지금 보고 있는
   // 탭(예: 위키의 그래프 뷰)이 DB 변경을 놓치지 않고 다시 불러오게 하는 공용 신호.
   const [데이터_갱신_신호, set데이터_갱신_신호] = useState(0)
+  // 클로드 앱 단축키: Ctrl/Cmd+K로 대화 검색에 포커스, Ctrl/Cmd+Shift+O로 새 대화.
+  // Sidebar가 검색창을 소유하고 있어 "포커스해라" 신호를 boolean으로 내려보낸다 — 탭을
+  // 클릭해서 Sidebar가 그냥 새로 마운트될 때는 포커스를 훔치면 안 되므로, 카운터가 아니라
+  // "지금 막 Ctrl+K를 눌렀다"는 값 자체를 true/false로 들고 있다가 Sidebar가 다 쓰면
+  // (onSearchFocused) 곧바로 false로 되돌린다.
+  const [검색에_포커스할지, set검색에_포커스할지] = useState(false)
 
   async function 내_세션_불러오기() {
     try {
@@ -154,6 +160,27 @@ function App() {
     await renameConversation(id, 제목)
     await refreshConversations()
   }
+
+  // 프로젝트 폼 모달이 떠 있을 때는 끼어들지 않는다(모달 안 입력 중 단축키가 튀는 걸 방지).
+  useEffect(() => {
+    if (!인증됨 || 프로젝트_폼) return
+    function 키다운(e: KeyboardEvent) {
+      const 조합키 = e.metaKey || e.ctrlKey
+      if (!조합키) return
+      const 키 = e.key.toLowerCase()
+      if (키 === 'k') {
+        e.preventDefault()
+        set탭('AI 채팅')
+        set검색에_포커스할지(true)
+      } else if (e.shiftKey && 키 === 'o') {
+        e.preventDefault()
+        set탭('AI 채팅')
+        onNew()
+      }
+    }
+    document.addEventListener('keydown', 키다운)
+    return () => document.removeEventListener('keydown', 키다운)
+  }, [인증됨, 프로젝트_폼])
 
   async function onDelete(id: number) {
     await deleteConversation(id)
@@ -253,6 +280,8 @@ function App() {
             currentId={currentId}
             onSelect={onSelectConversation}
             onNew={onNew}
+            shouldFocusSearch={검색에_포커스할지}
+            onSearchFocused={() => set검색에_포커스할지(false)}
             projects={projects}
             현재_프로젝트_id={보는_프로젝트_id}
             onOpenProject={set보는_프로젝트_id}

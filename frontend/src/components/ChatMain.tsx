@@ -9,6 +9,7 @@ import {
   fileDownloadUrl,
   getMessages,
   retryMessage,
+  sendFeedback,
   stopMessage,
   streamMessage,
   type 대기중_제안,
@@ -188,6 +189,38 @@ function 답변_복사_버튼({ text }: { text: string }) {
   )
 }
 
+// 클로드 앱의 👍/👎 — 같은 버튼을 다시 누르면 평가를 취소한다.
+function 피드백_버튼들({
+  rating,
+  onRate,
+}: {
+  rating: 'up' | 'down' | null | undefined
+  onRate: (값: 'up' | 'down') => void
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className={`assistant-action-btn feedback-btn ${rating === 'up' ? 'feedback-btn-up-active' : ''}`}
+        onClick={() => onRate('up')}
+        title="좋은 답변이에요"
+        aria-pressed={rating === 'up'}
+      >
+        <Icon name="thumbs-up" size={13} />
+      </button>
+      <button
+        type="button"
+        className={`assistant-action-btn feedback-btn ${rating === 'down' ? 'feedback-btn-down-active' : ''}`}
+        onClick={() => onRate('down')}
+        title="아쉬운 답변이에요"
+        aria-pressed={rating === 'down'}
+      >
+        <Icon name="thumbs-down" size={13} />
+      </button>
+    </>
+  )
+}
+
 export default function ChatMain({
   conversationId,
   onActivity,
@@ -305,12 +338,16 @@ export default function ChatMain({
         action_token: string | null
         생성_파일: 생성_파일 | null
         질문_대기: 명확화_질문 | null
+        메시지_id?: number | null
       }) => {
         setIsStreaming(false)
         setStreamingText('')
         setStreamingStatus(null)
         if (data.text) {
-          setMessages((prev) => [...prev, { role: 'assistant', content: data.text }])
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: data.text, id: data.메시지_id ?? undefined },
+          ])
         }
         if (data.제안 && data.action_token) {
           setPendingProposal({ 요약: data.제안, action_token: data.action_token })
@@ -489,6 +526,18 @@ export default function ChatMain({
     onActivity()
   }
 
+  // 낙관적으로 먼저 화면을 바꾸고 서버에 저장한다 — 실패해도 되돌리지 않고 다음
+  // 새로고침에서 서버 값과 자연히 맞춰지게 둔다(중요도가 낮은 부가 기능).
+  async function 피드백(i: number, 메시지_id: number, 값: 'up' | 'down') {
+    const 새값 = messages[i].rating === 값 ? null : 값
+    setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, rating: 새값 } : m)))
+    try {
+      await sendFeedback(conversationId, 메시지_id, 새값)
+    } catch {
+      /* 조용히 무시 */
+    }
+  }
+
   function 선택지_클릭(label: string) {
     setPendingQuestion(null)
     보내기(label, null)
@@ -624,13 +673,16 @@ export default function ChatMain({
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={마크다운_컴포넌트}>
                 {m.content}
               </ReactMarkdown>
-              <div className="assistant-actions">
+              <div className={`assistant-actions ${m.rating ? 'assistant-actions-rated' : ''}`}>
                 <답변_복사_버튼 text={m.content} />
                 {재생성_가능 && (
                   <button type="button" className="assistant-action-btn" onClick={재생성} title="다시 생성">
                     <Icon name="refresh" size={13} />
                     다시 생성
                   </button>
+                )}
+                {m.id != null && (
+                  <피드백_버튼들 rating={m.rating} onRate={(값) => 피드백(i, m.id!, 값)} />
                 )}
               </div>
             </div>

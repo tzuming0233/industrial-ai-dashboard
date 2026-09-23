@@ -1162,6 +1162,22 @@
   color: var(--본문색);
 }
 
+/* 평가를 남긴 답변은 마우스를 올리지 않아도 액션 줄이 계속 보인다 —
+   내가 뭘 눌렀는지 계속 알 수 있게. */
+.assistant-actions-rated {
+  opacity: 1 !important;
+}
+
+.feedback-btn-up-active {
+  color: var(--남색);
+  background: var(--남색-연하게);
+}
+
+.feedback-btn-down-active {
+  color: #c0392b;
+  background: color-mix(in srgb, #c0392b 12%, transparent);
+}
+
 .assistant-text pre {
   background: var(--배경색);
   border: 1px solid var(--테두리색);

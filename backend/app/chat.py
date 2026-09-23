@@ -420,6 +420,29 @@ def 대화_메시지(conversation_id: int, 사용자: dict = Depends(auth.현재
     }
 
 
+class _피드백_요청(BaseModel):
+    rating: str | None = None
+
+
+@router.post("/api/conversations/{conversation_id}/messages/{message_id}/feedback")
+def 메시지_피드백(
+    conversation_id: int, message_id: int, 요청: _피드백_요청, 사용자: dict = Depends(auth.현재_사용자),
+):
+    """클로드 앱의 👍/👎 — AI 답변에만 남길 수 있고, 같은 값을 다시 누르면(rating: null)
+    취소된다."""
+    대화_id = conversation_id
+    _소유권_확인(대화_id, 사용자["id"])
+    if 요청.rating not in (None, "up", "down"):
+        raise HTTPException(status_code=400, detail="평가 값이 올바르지 않습니다.")
+    대상 = next((m for m in repo.채팅기록_불러오기(대화_id) if m["id"] == message_id), None)
+    if not 대상:
+        raise HTTPException(status_code=404, detail="메시지를 찾을 수 없습니다.")
+    if 대상["role"] != "assistant":
+        raise HTTPException(status_code=400, detail="AI 답변에만 평가를 남길 수 있습니다.")
+    repo.메시지_피드백_저장(message_id, 대화_id, 요청.rating)
+    return {"ok": True}
+
+
 # ---------------- 제안 적용/취소 ----------------
 
 
@@ -485,7 +508,7 @@ def _마무리(
     대화_id: int, 텍스트: str, 제안: dict | None, 전체_df: pd.DataFrame | None = None,
     생성된_파일: dict | None = None, 질문_대기: dict | None = None,
 ):
-    repo.채팅기록_저장(대화_id, "assistant", 텍스트)
+    메시지_id = repo.채팅기록_저장(대화_id, "assistant", 텍스트)
 
     생성_파일_응답 = None
     if 생성된_파일:
@@ -496,7 +519,7 @@ def _마무리(
 
     if not 제안:
         yield _sse("done", {
-            "text": 텍스트, "제안": None, "action_token": None,
+            "text": 텍스트, "제안": None, "action_token": None, "메시지_id": 메시지_id,
             "생성_파일": 생성_파일_응답, "질문_대기": 질문_대기,
         })
         return
@@ -507,7 +530,7 @@ def _마무리(
     yield _sse(
         "done",
         {
-            "text": 텍스트, "제안": _제안_요약(제안, 전체_df), "action_token": 토큰,
+            "text": 텍스트, "제안": _제안_요약(제안, 전체_df), "action_token": 토큰, "메시지_id": 메시지_id,
             "생성_파일": 생성_파일_응답, "질문_대기": 질문_대기,
         },
     )

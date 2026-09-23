@@ -29,6 +29,8 @@ export type IconName =
   | 'arrow-down'
   | 'arrow-left'
   | 'file'
+  | 'thumbs-up'
+  | 'thumbs-down'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -98,6 +100,12 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M20 12a8 8 0 0 1-14 5.3L4 16" />
       <path d="M4 20v-4h4" />
     </>
+  ),
+  'thumbs-up': (
+    <path d="M7 11v9H4v-9h3Zm0 0 4.5-7a1.8 1.8 0 0 1 3.3 1l-1 4.5h4.6a2 2 0 0 1 1.95 2.44l-1.53 6.7A2 2 0 0 1 16.9 20H10a3 3 0 0 1-3-3v-6Z" />
+  ),
+  'thumbs-down': (
+    <path d="M17 13V4h3v9h-3Zm0 0-4.5 7a1.8 1.8 0 0 1-3.3-1l1-4.5H5.6a2 2 0 0 1-1.95-2.44l1.53-6.7A2 2 0 0 1 7.1 4H14a3 3 0 0 1 3 3v6Z" />
   ),
 }
 

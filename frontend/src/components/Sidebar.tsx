@@ -14,6 +14,11 @@ type Props = {
   onNewProject: () => void
   onDelete: (id: number) => void
   onRename: (id: number, 제목: string) => Promise<void>
+  // true면 검색창에 포커스하고, 다 썼으면 onSearchFocused로 부모에게 false로 되돌리라고
+  // 알린다(Ctrl/Cmd+K) — 탭 클릭 등으로 Sidebar가 그냥 새로 마운트될 때는 포커스를
+  // 훔치지 않도록 부모가 이 값을 평소엔 false로 유지한다.
+  shouldFocusSearch?: boolean
+  onSearchFocused?: () => void
 }
 
 // 백엔드가 주는 생성일시는 타임존 없는 naive ISO 문자열(예: "2026-09-08T05:14:00")이라
@@ -52,8 +57,18 @@ export default function Sidebar({
   onNewProject,
   onDelete,
   onRename,
+  shouldFocusSearch,
+  onSearchFocused,
 }: Props) {
   const [검색어, set검색어] = useState('')
+  const 검색_입력_ref = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!shouldFocusSearch) return
+    검색_입력_ref.current?.focus()
+    검색_입력_ref.current?.select()
+    onSearchFocused?.()
+  }, [shouldFocusSearch, onSearchFocused])
   const [삭제확인_id, set삭제확인_id] = useState<number | null>(null)
   // 클로드 앱처럼 제목을 그 자리에서 바로 고친다(Enter/포커스 이탈=저장, Escape=취소).
   const [편집중_id, set편집중_id] = useState<number | null>(null)
@@ -200,7 +215,11 @@ export default function Sidebar({
 
   return (
     <div className="sidebar">
-      <button className="btn btn-primary btn-block sidebar-action-btn" onClick={onNew}>
+      <button
+        className="btn btn-primary btn-block sidebar-action-btn"
+        onClick={onNew}
+        title="새 대화 (Ctrl+Shift+O)"
+      >
         <Icon name="plus" size={15} />
         새 대화
       </button>
@@ -208,10 +227,17 @@ export default function Sidebar({
       <div className="search-input-wrap">
         <Icon name="search" size={14} />
         <input
+          ref={검색_입력_ref}
           className="text-input search-input"
-          placeholder="대화 검색"
+          placeholder="대화 검색 (Ctrl+K)"
           value={검색어}
           onChange={(e) => set검색어(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && 검색어) {
+              e.preventDefault()
+              set검색어('')
+            }
+          }}
         />
       </div>
 

@@ -46,7 +46,14 @@ export type 대화 = {
   프로젝트_id: number | null
 }
 
-export type 메시지 = { role: 'user' | 'assistant'; content: string }
+export type 메시지 = {
+  role: 'user' | 'assistant'
+  content: string
+  // 서버가 채팅기록 조회 시 함께 주는 값 — 스트리밍이 막 끝나 화면에만 추가된
+  // 메시지에는 아직 없다(새로고침해서 다시 불러오면 채워진다).
+  id?: number
+  rating?: 'up' | 'down' | null
+}
 
 export type 제안요약 = {
   유형: string
@@ -209,6 +216,13 @@ export const renameConversation = (id: number, 제목: string) =>
     body: JSON.stringify({ 제목 }),
   })
 
+// 클로드 앱의 👍/👎 — 같은 값을 다시 누르면 rating: null로 보내 평가를 취소한다.
+export const sendFeedback = (대화_id: number, 메시지_id: number, rating: 'up' | 'down' | null) =>
+  api<{ ok: boolean }>(`/api/conversations/${대화_id}/messages/${메시지_id}/feedback`, {
+    method: 'POST',
+    body: JSON.stringify({ rating }),
+  })
+
 export const getMessages = (id: number) =>
   api<{
     메시지: 메시지[]
@@ -360,6 +374,9 @@ type 스트림_done = {
   action_token: string | null
   생성_파일: 생성_파일 | null
   질문_대기: 명확화_질문 | null
+  // 방금 저장된 assistant 메시지의 id — 새로고침 없이 바로 👍/👎를 달 수 있게 해준다.
+  // 빈 응답(질문도 파일도 없던 요청) 같은 일부 경로에서는 안 실려 올 수 있다.
+  메시지_id?: number | null
 }
 
 type 스트림_핸들러 = {

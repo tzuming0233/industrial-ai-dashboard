@@ -181,6 +181,19 @@ def 채팅_DB_준비():
             conn.execute("ALTER TABLE 대화 ADD COLUMN 프로젝트_id INTEGER")
             _사업연결_대화를_프로젝트로_이관(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_대화_프로젝트_id ON 대화 (프로젝트_id)")
+
+        # 클로드 앱의 👍/👎 — 답변 하나당 평가 하나(메시지_id가 그대로 PK라 다시 누르면 덮어쓴다).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 메시지_피드백 (
+                메시지_id INTEGER PRIMARY KEY,
+                대화_id INTEGER NOT NULL,
+                rating TEXT NOT NULL CHECK (rating IN ('up', 'down')),
+                생성일시 TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_메시지_피드백_대화_id ON 메시지_피드백 (대화_id)")
         conn.commit()
     finally:
         conn.close()
@@ -827,6 +840,10 @@ def 프로젝트_지식_총글자수(프로젝트_id: int) -> int:
 def 대화_삭제(대화_id: int) -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
+        conn.execute(
+            "DELETE FROM 메시지_피드백 WHERE 메시지_id IN (SELECT id FROM 채팅기록 WHERE 대화_id = ?)",
+            (대화_id,),
+        )
         conn.execute("DELETE FROM 채팅기록 WHERE 대화_id = ?", (대화_id,))
         conn.execute("DELETE FROM 대화 WHERE id = ?", (대화_id,))
         conn.commit()
@@ -839,7 +856,10 @@ def 채팅기록_불러오기(대화_id: int) -> list[dict]:
     try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT role, content FROM 채팅기록 WHERE 대화_id = ? ORDER BY id", (대화_id,)
+            "SELECT c.id, c.role, c.content, f.rating FROM 채팅기록 c "
+            "LEFT JOIN 메시지_피드백 f ON f.메시지_id = c.id "
+            "WHERE c.대화_id = ? ORDER BY c.id",
+            (대화_id,),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -851,11 +871,12 @@ def 채팅기록_마지막_삭제(대화_id: int) -> None:
     같은 질문으로 다시 받기 위해 쓴다."""
     conn = sqlite3.connect(DB_PATH)
     try:
-        conn.execute(
-            "DELETE FROM 채팅기록 WHERE id = "
-            "(SELECT id FROM 채팅기록 WHERE 대화_id = ? ORDER BY id DESC LIMIT 1)",
-            (대화_id,),
-        )
+        row = conn.execute(
+            "SELECT id FROM 채팅기록 WHERE 대화_id = ? ORDER BY id DESC LIMIT 1", (대화_id,)
+        ).fetchone()
+        if row:
+            conn.execute("DELETE FROM 메시지_피드백 WHERE 메시지_id = ?", (row[0],))
+            conn.execute("DELETE FROM 채팅기록 WHERE id = ?", (row[0],))
         conn.commit()
     finally:
         conn.close()
@@ -873,8 +894,28 @@ def 채팅기록_인덱스_이후_삭제(대화_id: int, 인덱스: int) -> None
         ).fetchall()]
         지울_id들 = ids[인덱스:]
         if 지울_id들:
+            conn.executemany("DELETE FROM 메시지_피드백 WHERE 메시지_id = ?", [(i,) for i in 지울_id들])
             conn.executemany("DELETE FROM 채팅기록 WHERE id = ?", [(i,) for i in 지울_id들])
             conn.commit()
+    finally:
+        conn.close()
+
+
+def 메시지_피드백_저장(메시지_id: int, 대화_id: int, rating: str | None) -> None:
+    """클로드 앱의 👍/👎 — 같은 메시지에 다시 누르면 덮어쓰고, None이면(같은 값을 다시
+    눌러 취소) 평가를 지운다."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        if rating is None:
+            conn.execute("DELETE FROM 메시지_피드백 WHERE 메시지_id = ?", (메시지_id,))
+        else:
+            지금 = _dt.datetime.now().isoformat(timespec="seconds")
+            conn.execute(
+                "INSERT INTO 메시지_피드백 (메시지_id, 대화_id, rating, 생성일시) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(메시지_id) DO UPDATE SET rating = excluded.rating, 생성일시 = excluded.생성일시",
+                (메시지_id, 대화_id, rating, 지금),
+            )
+        conn.commit()
     finally:
         conn.close()
 
@@ -927,11 +968,13 @@ def 대화_검색(사용자_id: int | None, 검색어: str, 최대개수: int = 
         conn.close()
 
 
-def 채팅기록_저장(대화_id: int, role: str, content: str) -> None:
+def 채팅기록_저장(대화_id: int, role: str, content: str) -> int:
+    """저장한 행의 id를 돌려준다 — 스트리밍 응답이 방금 저장한 assistant 메시지에
+    바로 👍/👎를 달 수 있으려면(새로고침 없이) 프론트가 그 id를 알아야 한다."""
     conn = sqlite3.connect(DB_PATH)
     try:
         지금 = _dt.datetime.now().isoformat(timespec="seconds")
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO 채팅기록 (role, content, 생성일시, 대화_id) VALUES (?, ?, ?, ?)",
             (role, content, 지금, 대화_id),
         )
@@ -942,6 +985,7 @@ def 채팅기록_저장(대화_id: int, role: str, content: str) -> None:
                 제목 = content.strip().splitlines()[0][:30]
                 conn.execute("UPDATE 대화 SET 제목 = ? WHERE id = ?", (제목, 대화_id))
         conn.commit()
+        return cur.lastrowid
     finally:
         conn.close()
 
