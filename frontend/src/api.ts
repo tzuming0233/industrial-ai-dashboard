@@ -543,3 +543,59 @@ export const uploadProjectKnowledge = (id: number, file: File) => {
 
 export const deleteProjectKnowledge = (id: number, 지식_id: number) =>
   프로젝트_요청<{ ok: boolean }>(`/api/projects/${id}/knowledge/${지식_id}`, { method: 'DELETE' })
+
+// 제조 AI수준진단 — "풀스택 AI팩토리" 9개 레이어(L1~L9) 참조모델 기반 자가진단.
+
+export type AI진단_레이어_수준 = { 수준: number; 이름: string; 설명: string }
+
+export type AI진단_레이어 = {
+  코드: string
+  이름: string
+  설명: string
+  ai개입지점: string[]
+  수준들: AI진단_레이어_수준[]
+}
+
+export type AI진단_종합단계 = { 단계: number; 이름: string; 부제: string }
+
+export type AI진단_응답 = { 레이어코드: string; 수준: number; 메모?: string }
+
+export type AI진단_세션_요약 = {
+  id: number
+  대상명: string
+  사업_id: number | null
+  작성자: string | null
+  메모: string | null
+  생성일시: string
+  수정일시: string
+  응답: AI진단_응답[]
+  종합단계: AI진단_종합단계
+}
+
+export const getAiDiagnosisLayers = () => api<AI진단_레이어[]>('/api/ai-diagnosis/layers')
+
+export const listAiDiagnosisSessions = () => api<AI진단_세션_요약[]>('/api/ai-diagnosis/sessions')
+
+export const getAiDiagnosisSession = (id: number) =>
+  api<AI진단_세션_요약>(`/api/ai-diagnosis/sessions/${id}`)
+
+export const createAiDiagnosisSession = (대상명: string, 메모 = '') =>
+  api<{ id: number }>('/api/ai-diagnosis/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ 대상명, 메모 }),
+  })
+
+export const updateAiDiagnosisSession = (id: number, 변경: { 대상명?: string; 메모?: string }) =>
+  api<{ ok: boolean }>(`/api/ai-diagnosis/sessions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(변경),
+  })
+
+export const saveAiDiagnosisResponses = (id: number, 응답: AI진단_응답[]) =>
+  api<AI진단_세션_요약>(`/api/ai-diagnosis/sessions/${id}/responses`, {
+    method: 'PUT',
+    body: JSON.stringify({ 응답 }),
+  })
+
+export const deleteAiDiagnosisSession = (id: number) =>
+  api<{ ok: boolean }>(`/api/ai-diagnosis/sessions/${id}`, { method: 'DELETE' })

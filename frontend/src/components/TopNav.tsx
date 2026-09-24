@@ -1,6 +1,6 @@
 import Icon, { type IconName } from './Icon'
 
-type Tab = 'AI 채팅' | '대시보드' | '매출현황 표' | '마일스톤' | '위키' | '데이터 관리'
+type Tab = 'AI 채팅' | '대시보드' | '매출현황 표' | '마일스톤' | '위키' | '데이터 관리' | 'AI수준진단'
 
 const 탭_아이콘: Record<Tab, IconName> = {
   'AI 채팅': 'sparkles',
@@ -9,9 +9,18 @@ const 탭_아이콘: Record<Tab, IconName> = {
   마일스톤: 'calendar',
   위키: 'book',
   '데이터 관리': 'edit',
+  AI수준진단: 'gauge',
 }
 
-const 탭_목록: Tab[] = ['AI 채팅', '대시보드', '매출현황 표', '마일스톤', '위키', '데이터 관리']
+const 탭_목록: Tab[] = [
+  'AI 채팅',
+  '대시보드',
+  '매출현황 표',
+  '마일스톤',
+  '위키',
+  '데이터 관리',
+  'AI수준진단',
+]
 
 type Props = {
   current: Tab

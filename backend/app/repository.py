@@ -1558,3 +1558,142 @@ def 생성파일_불러오기(파일_id: int) -> dict | None:
         return dict(row) if row else None
     finally:
         conn.close()
+
+
+def 제조AI진단_DB_준비():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 제조AI진단_세션 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                대상명 TEXT NOT NULL,
+                사업_id INTEGER,
+                작성자 TEXT,
+                메모 TEXT,
+                생성일시 TEXT,
+                수정일시 TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 제조AI진단_응답 (
+                세션_id INTEGER NOT NULL,
+                레이어코드 TEXT NOT NULL,
+                수준 INTEGER NOT NULL DEFAULT 0,
+                메모 TEXT,
+                PRIMARY KEY (세션_id, 레이어코드)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_제조AI진단_응답_세션_id ON 제조AI진단_응답 (세션_id)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@_캐시
+def 제조AI진단_세션_목록() -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 대상명, 사업_id, 작성자, 메모, 생성일시, 수정일시 "
+            "FROM 제조AI진단_세션 ORDER BY 수정일시 DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 제조AI진단_세션_생성(대상명: str, 작성자: str, 사업_id: int | None = None, 메모: str = "") -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        지금 = _dt.datetime.now().isoformat(timespec="seconds")
+        cur = conn.execute(
+            "INSERT INTO 제조AI진단_세션 (대상명, 사업_id, 작성자, 메모, 생성일시, 수정일시) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (대상명, 사업_id, 작성자, 메모, 지금, 지금),
+        )
+        conn.commit()
+        새_id = cur.lastrowid
+    finally:
+        conn.close()
+    제조AI진단_세션_목록.clear()
+    return 새_id
+
+
+def 제조AI진단_세션_조회(세션_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        세션 = conn.execute(
+            "SELECT id, 대상명, 사업_id, 작성자, 메모, 생성일시, 수정일시 "
+            "FROM 제조AI진단_세션 WHERE id = ?", (int(세션_id),)
+        ).fetchone()
+        if not 세션:
+            return None
+        응답들 = conn.execute(
+            "SELECT 레이어코드, 수준, 메모 FROM 제조AI진단_응답 WHERE 세션_id = ?", (int(세션_id),)
+        ).fetchall()
+        결과 = dict(세션)
+        결과["응답"] = [dict(row) for row in 응답들]
+        return 결과
+    finally:
+        conn.close()
+
+
+def 제조AI진단_세션_수정(세션_id: int, 대상명: str | None = None, 메모: str | None = None) -> None:
+    반영할_필드 = {}
+    if 대상명 is not None:
+        반영할_필드["대상명"] = 대상명
+    if 메모 is not None:
+        반영할_필드["메모"] = 메모
+    if not 반영할_필드:
+        return
+    반영할_필드["수정일시"] = _dt.datetime.now().isoformat(timespec="seconds")
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        설정절 = ", ".join(f"{k} = ?" for k in 반영할_필드)
+        conn.execute(
+            f"UPDATE 제조AI진단_세션 SET {설정절} WHERE id = ?",
+            (*반영할_필드.values(), int(세션_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    제조AI진단_세션_목록.clear()
+
+
+def 제조AI진단_세션_삭제(세션_id: int) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("DELETE FROM 제조AI진단_응답 WHERE 세션_id = ?", (int(세션_id),))
+        conn.execute("DELETE FROM 제조AI진단_세션 WHERE id = ?", (int(세션_id),))
+        conn.commit()
+    finally:
+        conn.close()
+    제조AI진단_세션_목록.clear()
+
+
+def 제조AI진단_응답_일괄저장(세션_id: int, 응답_리스트: list[dict]) -> None:
+    """레이어 9개를 한 번에 upsert — 진단 화면의 '저장' 버튼 한 번으로 전체 반영."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.executemany(
+            "INSERT INTO 제조AI진단_응답 (세션_id, 레이어코드, 수준, 메모) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(세션_id, 레이어코드) DO UPDATE SET 수준 = excluded.수준, 메모 = excluded.메모",
+            [
+                (int(세션_id), 응답["레이어코드"], int(응답["수준"]), 응답.get("메모", ""))
+                for 응답 in 응답_리스트
+            ],
+        )
+        conn.execute(
+            "UPDATE 제조AI진단_세션 SET 수정일시 = ? WHERE id = ?",
+            (_dt.datetime.now().isoformat(timespec="seconds"), int(세션_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    제조AI진단_세션_목록.clear()

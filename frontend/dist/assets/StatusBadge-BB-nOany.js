@@ -1,0 +1,1 @@
+import{a as e}from"./index-BAc-Wqmh.js";import{o as t}from"./theme-Brz8mAt3.js";var n=e();function r({value:e}){let[r,i]=t[e]??[`#F5F5F5`,`#8C8C8C`];return(0,n.jsx)(`span`,{className:`status-badge`,style:{background:r,color:i},children:e})}export{r as t};

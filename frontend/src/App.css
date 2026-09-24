@@ -1663,6 +1663,85 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
+/* ---------- 제조 AI수준진단 ---------- */
+
+.ai-diag-layer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.ai-diag-layer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--카드-배경);
+  box-shadow: var(--카드-그림자);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+}
+
+.ai-diag-layer-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.ai-diag-layer-code {
+  flex-shrink: 0;
+  background: var(--남색-연하게);
+  color: var(--남색-진하게);
+  font-weight: 700;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  padding: 3px 7px;
+}
+
+.ai-diag-layer-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--본문색);
+}
+
+.ai-diag-layer-desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--보조텍스트색);
+}
+
+.ai-diag-layer-criteria {
+  margin: 0;
+  font-size: 12px;
+  color: var(--본문색);
+  background: var(--배경색);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.ai-diag-layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--보조텍스트색);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ai-diag-ai-points {
+  margin: -4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--보조텍스트색);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 /* ---------- 마일스톤 타임라인 (직접 구현) ---------- */
 
 .timeline-legend {

@@ -49,6 +49,7 @@ def _시작시_DB_준비():
     repo.투입인력_DB_준비()
     repo.노트_DB_준비()
     repo.생성파일_DB_준비()
+    repo.제조AI진단_DB_준비()
 
 
 class 회원가입_요청(BaseModel):
@@ -264,9 +265,11 @@ from backend.app.ontology import router as _온톨로지_라우터  # noqa: E402
 from backend.app.notes import router as _노트_라우터  # noqa: E402
 from backend.app.data_management import router as _데이터관리_라우터  # noqa: E402
 from backend.app.projects import router as _프로젝트_라우터  # noqa: E402
+from backend.app.ai_diagnosis import router as _AI진단_라우터  # noqa: E402
 
 app.include_router(_채팅_라우터)
 app.include_router(_온톨로지_라우터)
 app.include_router(_노트_라우터)
 app.include_router(_데이터관리_라우터)
 app.include_router(_프로젝트_라우터)
+app.include_router(_AI진단_라우터)

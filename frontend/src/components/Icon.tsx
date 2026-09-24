@@ -31,6 +31,7 @@ export type IconName =
   | 'file'
   | 'thumbs-up'
   | 'thumbs-down'
+  | 'gauge'
 
 const paths: Record<IconName, ReactNode> = {
   sparkles: (
@@ -106,6 +107,13 @@ const paths: Record<IconName, ReactNode> = {
   ),
   'thumbs-down': (
     <path d="M17 13V4h3v9h-3Zm0 0-4.5 7a1.8 1.8 0 0 1-3.3-1l1-4.5H5.6a2 2 0 0 1-1.95-2.44l1.53-6.7A2 2 0 0 1 7.1 4H14a3 3 0 0 1 3 3v6Z" />
+  ),
+  gauge: (
+    <>
+      <path d="M4 17a8 8 0 0 1 16 0" />
+      <path d="M12 17l4-5" />
+      <circle cx="12" cy="17" r="1.3" fill="currentColor" stroke="none" />
+    </>
   ),
 }
 

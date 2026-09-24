@@ -62,6 +62,7 @@ def temp_db(tmp_path, monkeypatch):
     repo.투입인력_DB_준비()
     repo.노트_DB_준비()
     repo.생성파일_DB_준비()
+    repo.제조AI진단_DB_준비()
     repo.사업현황_컬럼_보강()
     return db_path
 
