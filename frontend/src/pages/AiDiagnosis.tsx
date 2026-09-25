@@ -12,7 +12,7 @@ import {
 } from '../api'
 import Icon from '../components/Icon'
 import MetricCard from '../components/MetricCard'
-import { 전기블루, 차트_공통레이아웃, 차트_격자색 } from '../theme'
+import { 전기블루, 차트_공통레이아웃, 차트_격자색, 고정_색상맵 } from '../theme'
 
 function 상대_날짜(iso: string): string {
   const d = new Date(iso)
@@ -26,24 +26,36 @@ function 상대_날짜(iso: string): string {
 
 type 응답_상태 = Record<string, { 수준: number; 메모: string }>
 
-// 진단 세션 목록 — 새 진단 시작, 과거 진단 열람/삭제.
+// 진단 세션 목록 — 새 진단 시작, 과거 진단 열람/삭제, 2개 이상 선택해 비교.
 function 세션_목록_뷰({
   세션_목록,
   onOpen,
   onCreate,
   onDelete,
+  onCompare,
 }: {
   세션_목록: AI진단_세션_요약[]
   onOpen: (id: number) => void
   onCreate: (대상명: string, 메모: string) => Promise<void>
   onDelete: (id: number) => void
+  onCompare: (ids: number[]) => void
 }) {
   const [모달_열림, set모달_열림] = useState(false)
   const [대상명, set대상명] = useState('')
   const [메모, set메모] = useState('')
   const [처리중, set처리중] = useState(false)
   const [오류, set오류] = useState<string | null>(null)
+  const [선택_ids, set선택_ids] = useState<Set<number>>(new Set())
   const 입력_ref = useRef<HTMLInputElement>(null)
+
+  function 선택_토글(id: number) {
+    set선택_ids((prev) => {
+      const 다음 = new Set(prev)
+      if (다음.has(id)) 다음.delete(id)
+      else 다음.add(id)
+      return 다음
+    })
+  }
 
   useEffect(() => {
     if (모달_열림) 입력_ref.current?.focus()
@@ -70,9 +82,20 @@ function 세션_목록_뷰({
     <div className="page">
       <div className="table-toolbar">
         <h2 style={{ margin: 0, fontSize: 18 }}>제조 AI수준진단</h2>
-        <button type="button" className="btn btn-primary" onClick={() => set모달_열림(true)}>
-          <Icon name="plus" size={14} />새 진단
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={선택_ids.size < 2}
+            title={선택_ids.size < 2 ? '2개 이상 선택하면 비교할 수 있어요' : undefined}
+            onClick={() => onCompare([...선택_ids])}
+          >
+            선택 비교 {선택_ids.size > 0 ? `(${선택_ids.size})` : ''}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => set모달_열림(true)}>
+            <Icon name="plus" size={14} />새 진단
+          </button>
+        </div>
       </div>
 
       {세션_목록.length === 0 ? (
@@ -84,6 +107,7 @@ function 세션_목록_뷰({
           <table className="data-table">
             <thead>
               <tr>
+                <th />
                 <th>대상명</th>
                 <th>종합단계</th>
                 <th>작성자</th>
@@ -94,6 +118,14 @@ function 세션_목록_뷰({
             <tbody>
               {세션_목록.map((s) => (
                 <tr key={s.id} onClick={() => onOpen(s.id)} style={{ cursor: 'pointer' }}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={선택_ids.has(s.id)}
+                      onChange={() => 선택_토글(s.id)}
+                      aria-label={`'${s.대상명}' 비교에 포함`}
+                    />
+                  </td>
                   <td>{s.대상명}</td>
                   <td>
                     {s.종합단계.단계}/5 · {s.종합단계.이름}
@@ -374,11 +406,128 @@ function 세션_상세_뷰({
   )
 }
 
+function 수준_이름(레이어: AI진단_레이어 | undefined, 수준: number): string {
+  if (!수준) return '미착수'
+  return 레이어?.수준들.find((lv) => lv.수준 === 수준)?.이름 ?? String(수준)
+}
+
+// 진단 여러 개 비교 — 레이더 겹쳐 보기 + 레이어별 비교 표. 백엔드 추가 호출 없이
+// 목록 조회 때 이미 받아둔 세션별 응답/종합단계를 그대로 쓴다.
+function 세션_비교_뷰({
+  세션_목록,
+  선택_ids,
+  레이어_목록,
+  onBack,
+}: {
+  세션_목록: AI진단_세션_요약[]
+  선택_ids: number[]
+  레이어_목록: AI진단_레이어[]
+  onBack: () => void
+}) {
+  const 대상들 = useMemo(
+    () => 세션_목록.filter((s) => 선택_ids.includes(s.id)),
+    [세션_목록, 선택_ids],
+  )
+  const 색상맵 = useMemo(() => 고정_색상맵(대상들.map((s) => String(s.id))), [대상들])
+
+  const 평균단계 = 대상들.length
+    ? (대상들.reduce((합, s) => 합 + s.종합단계.단계, 0) / 대상들.length).toFixed(1)
+    : '-'
+
+  const 레이어_코드들 = 레이어_목록.map((l) => l.코드)
+
+  return (
+    <div className="page">
+      <div className="table-toolbar">
+        <button type="button" className="btn btn-secondary" onClick={onBack}>
+          <Icon name="arrow-left" size={14} />
+          목록으로
+        </button>
+      </div>
+
+      <h2 style={{ margin: 0, fontSize: 18 }}>진단 비교 ({대상들.length}건)</h2>
+
+      <div className="metric-row">
+        {대상들.map((s) => (
+          <MetricCard
+            key={s.id}
+            label={s.대상명}
+            value={`${s.종합단계.단계}/5 · ${s.종합단계.이름}`}
+            icon="gauge"
+          />
+        ))}
+        <MetricCard label="평균 종합단계" value={`${평균단계}/5`} icon="chart" />
+      </div>
+
+      <div className="chart-box chart-box-full">
+        <h3 className="chart-title">레이어별 수준 비교 (L1~L9)</h3>
+        <Plot
+          data={대상들.map((s) => {
+            const 응답_맵 = Object.fromEntries(s.응답.map((r) => [r.레이어코드, r.수준]))
+            const r = 레이어_코드들.map((코드) => 응답_맵[코드] ?? 0)
+            const theta = [...레이어_코드들, 레이어_코드들[0]]
+            return {
+              type: 'scatterpolar' as const,
+              name: s.대상명,
+              theta,
+              r: [...r, r[0]],
+              fill: 'toself' as const,
+              opacity: 0.5,
+              line: { color: 색상맵[String(s.id)], width: 2 },
+              marker: { color: 색상맵[String(s.id)], size: 5 },
+              hovertemplate: `${s.대상명} · %{theta}: 수준 %{r}<extra></extra>`,
+            }
+          })}
+          layout={{
+            ...차트_공통레이아웃(true),
+            polar: {
+              bgcolor: 'rgba(0,0,0,0)',
+              radialaxis: { range: [0, 3], tickvals: [0, 1, 2, 3], gridcolor: 차트_격자색 },
+              angularaxis: { gridcolor: 차트_격자색 },
+            },
+            legend: { orientation: 'h', y: -0.1 },
+            margin: { l: 40, r: 40, t: 20, b: 40 },
+          }}
+          config={{ displayModeBar: false, responsive: true }}
+          style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }}
+        />
+      </div>
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>레이어</th>
+              {대상들.map((s) => (
+                <th key={s.id}>{s.대상명}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {레이어_목록.map((레이어) => (
+              <tr key={레이어.코드}>
+                <td>
+                  {레이어.코드} · {레이어.이름}
+                </td>
+                {대상들.map((s) => {
+                  const 응답 = s.응답.find((r) => r.레이어코드 === 레이어.코드)
+                  return <td key={s.id}>{수준_이름(레이어, 응답?.수준 ?? 0)}</td>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function AiDiagnosis() {
   const [레이어_목록, set레이어_목록] = useState<AI진단_레이어[]>([])
   const [세션_목록, set세션_목록] = useState<AI진단_세션_요약[]>([])
   const [로딩, set로딩] = useState(true)
   const [선택_id, set선택_id] = useState<number | null>(null)
+  const [비교_ids, set비교_ids] = useState<number[] | null>(null)
 
   useEffect(() => {
     Promise.all([getAiDiagnosisLayers(), listAiDiagnosisSessions()])
@@ -414,6 +563,17 @@ export default function AiDiagnosis() {
     )
   }
 
+  if (비교_ids != null) {
+    return (
+      <세션_비교_뷰
+        세션_목록={세션_목록}
+        선택_ids={비교_ids}
+        레이어_목록={레이어_목록}
+        onBack={() => set비교_ids(null)}
+      />
+    )
+  }
+
   if (선택_id != null) {
     return (
       <세션_상세_뷰
@@ -437,6 +597,7 @@ export default function AiDiagnosis() {
       onOpen={set선택_id}
       onCreate={생성}
       onDelete={삭제}
+      onCompare={set비교_ids}
     />
   )
 }

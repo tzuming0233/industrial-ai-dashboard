@@ -149,7 +149,14 @@ SYSTEM_PROMPT = (
     "고쳐달라고 명시적으로 요청할 때만 propose_add_diagnosis_layer/propose_update_diagnosis_layer/"
     "propose_delete_diagnosis_layer를 쓰세요 — code는 반드시 query_diagnosis_framework로 먼저 확인하고, "
     "위의 진단 작성 규칙과 절대 혼동하지 마세요(예: '이 기업은 아직 초기 단계야'는 진단 작성이고, "
-    "'L5 기준을 이렇게 바꿔줘'는 프레임워크 수정입니다).\n"
+    "'L5 기준을 이렇게 바꿔줘'는 프레임워크 수정입니다). 레이어가 예전에 어떻게 바뀌어왔는지 궁금해하거나 "
+    "특정 수정을 되돌리고 싶어하면, query_diagnosis_layer_history로 이력을 확인한 뒤 "
+    "propose_restore_diagnosis_layer로 되돌리기를 제안하세요.\n"
+    "- 진단 결과를 보고서/요약 문서로 만들어달라는 요청을 받으면, query_diagnosis_sessions로 해당 세션의 "
+    "레이어별 수준·메모·종합단계를 얻고 query_diagnosis_framework로 각 레이어 이름·기준 설명을 얻어 "
+    "합친 뒤 create_file로 만드세요 — 대상명·진단일·종합단계를 먼저 제시하고, 레이어별로 코드·이름· "
+    "수준·근거 메모를 표로 정리하세요. 인포그래픽처럼 '보여주는' 보고서면 create_file 설명의 규칙대로 "
+    "자체완결형 HTML로, 그대로 다운로드해 전달할 문서면 .docx로 만드세요.\n"
     "- 사내 데이터로 답할 수 없는 최신 정보(뉴스, 특정 기업/기술 동향, 최근 정책·규정, 업계 시황 등)가 "
     "필요하면 web_search로 실제로 찾아본 뒤 답하세요. 사업현황·노트·온톨로지로 답할 수 있는 질문에는 "
     "굳이 웹 검색을 쓰지 마세요.\n"
@@ -752,6 +759,36 @@ TOOLS = [
         },
     },
     {
+        "name": "query_diagnosis_layer_history",
+        "description": (
+            "AI수준진단 레이어 하나가 수정될 때마다 남은 변경 이력(이전 값·수정일시·작성자)을 조회한다. "
+            "'이 레이어가 어떻게 바뀌어왔어?', '누가 언제 이 기준을 고쳤어?' 같은 질문에 답하거나, "
+            "이전 버전으로 되돌리기 전에 어떤 버전이 있는지 확인할 때 사용한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "이력을 조회할 레이어 코드"},
+            },
+            "required": ["code"],
+        },
+    },
+    {
+        "name": "propose_restore_diagnosis_layer",
+        "description": (
+            "AI수준진단 레이어를 과거 버전으로 되돌리자고 제안한다. 실제로 되돌리지 않고 화면에 "
+            "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. version_id는 반드시 "
+            "query_diagnosis_layer_history로 먼저 조회해 확인해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "version_id": {"type": "integer", "description": "되돌릴 버전의 id (query_diagnosis_layer_history 결과)"},
+            },
+            "required": ["version_id"],
+        },
+    },
+    {
         "name": "create_file",
         "description": (
             "사용자가 다운로드할 수 있는 실제 파일을 만든다. 확인 없이 즉시 만들어져 채팅에 다운로드 "
@@ -849,6 +886,7 @@ def _도구_목록_결정(실제_모델: str) -> list:
     "propose_add_staffing", "propose_delete_staffing", "propose_set_target",
     "propose_add_diagnosis", "propose_update_diagnosis",
     "propose_add_diagnosis_layer", "propose_update_diagnosis_layer", "propose_delete_diagnosis_layer",
+    "propose_restore_diagnosis_layer",
 }
 
 # 스트리밍 중 "지금 뭘 하고 있는지" 화면에 보여주기 위한 도구별 상태 문구.
@@ -880,6 +918,8 @@ _도구_상태_문구 = {
     "propose_add_diagnosis_layer": "추가할 레이어를 정리하는 중...",
     "propose_update_diagnosis_layer": "수정할 레이어 정의를 정리하는 중...",
     "propose_delete_diagnosis_layer": "삭제할 레이어를 정리하는 중...",
+    "query_diagnosis_layer_history": "레이어 변경 이력을 조회하는 중...",
+    "propose_restore_diagnosis_layer": "되돌릴 내용을 정리하는 중...",
     "create_file": "파일을 만드는 중...",
     "ask_clarifying_question": "질문을 정리하는 중...",
     "web_search": "웹을 검색하는 중...",
@@ -1243,6 +1283,26 @@ def propose_set_target(연도: int, 목표매출: int, 목표손익: int) -> dic
     }
 
 
+# backend/app/ai_diagnosis.py의 _5단계_밴드/_전체단계_계산과 반드시 같은 내용으로 맞춰야 한다 —
+# 이 파일은 repository.py/ai_diagnosis.py를 import하지 않는 관례(query_notes 등)를 따르느라
+# 계산 로직까지 복제했다. 밴드 기준을 바꾸면 두 곳 다 고쳐야 한다.
+_진단_5단계_밴드 = [
+    (1, "Connected Foundation", ["L8", "L9"]),
+    (2, "Integrated Platform", ["L7", "L3"]),
+    (3, "Digital Model Factory", ["L6", "L7", "L8"]),
+    (4, "AI Operationalization", ["L4", "L5"]),
+    (5, "Full-Stack AI Factory", ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9"]),
+]
+
+
+def _진단_종합단계_계산(레이어_수준: dict[str, int]) -> str:
+    도달_단계 = None
+    for 단계, 이름, 필요_레이어들 in _진단_5단계_밴드:
+        if all(레이어_수준.get(코드, 0) >= 2 for 코드 in 필요_레이어들):
+            도달_단계 = f"{단계}단계 · {이름}"
+    return 도달_단계 or "0단계 · 연결 전"
+
+
 def query_diagnosis_sessions(대상명: str | None = None) -> list[dict]:
     if not DB_PATH.exists():
         return []
@@ -1261,6 +1321,7 @@ def query_diagnosis_sessions(대상명: str | None = None) -> list[dict]:
                 "SELECT 레이어코드, 수준, 메모 FROM 제조AI진단_응답 WHERE 세션_id = ?", (세션["id"],)
             ).fetchall()
             세션["응답"] = [dict(row) for row in 응답_rows]
+            세션["종합단계"] = _진단_종합단계_계산({r["레이어코드"]: r["수준"] for r in 세션["응답"]})
         return 세션들
     finally:
         conn.close()
@@ -1304,6 +1365,32 @@ def propose_update_diagnosis_layer(코드: str, 변경필드: dict) -> dict:
 
 def propose_delete_diagnosis_layer(코드: str) -> dict:
     return {"확인": f"'{코드}' 레이어 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def query_diagnosis_layer_history(코드: str) -> list[dict]:
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 이름, 설명, ai개입지점, 수준들, 저장일시, 작성자 "
+            "FROM 제조AI진단_레이어_버전 WHERE 코드 = ? ORDER BY id DESC",
+            (코드,),
+        ).fetchall()
+        결과 = []
+        for row in rows:
+            항목 = dict(row)
+            항목["ai개입지점"] = json.loads(항목["ai개입지점"] or "[]")
+            항목["수준들"] = json.loads(항목["수준들"] or "[]")
+            결과.append(항목)
+        return 결과
+    finally:
+        conn.close()
+
+
+def propose_restore_diagnosis_layer(버전_id: int) -> dict:
+    return {"확인": f"버전#{버전_id}으로 되돌리기를 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
 def create_file(파일명: str, 내용: str) -> dict:
@@ -1376,6 +1463,8 @@ _상위_키_매핑 = {
     },
     "propose_update_diagnosis_layer": {"code": "코드", "changes": "변경필드"},
     "propose_delete_diagnosis_layer": {"code": "코드"},
+    "query_diagnosis_layer_history": {"code": "코드"},
+    "propose_restore_diagnosis_layer": {"version_id": "버전_id"},
     "create_file": {"filename": "파일명", "content": "내용"},
     "ask_clarifying_question": {"question": "질문", "options": "선택지"},
 }
@@ -1479,6 +1568,10 @@ def _도구_실행(name: str, tool_input: dict):
         return propose_update_diagnosis_layer(**tool_input)
     if name == "propose_delete_diagnosis_layer":
         return propose_delete_diagnosis_layer(**tool_input)
+    if name == "query_diagnosis_layer_history":
+        return query_diagnosis_layer_history(**tool_input)
+    if name == "propose_restore_diagnosis_layer":
+        return propose_restore_diagnosis_layer(**tool_input)
     if name == "create_file":
         return create_file(**tool_input)
     if name == "ask_clarifying_question":

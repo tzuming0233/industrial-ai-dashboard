@@ -1738,6 +1738,21 @@ def 제조AI진단_DB_준비():
                     for 순서, 레이어 in enumerate(_기본_제조AI진단_레이어들)
                 ],
             )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 제조AI진단_레이어_버전 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                코드 TEXT NOT NULL,
+                이름 TEXT,
+                설명 TEXT,
+                ai개입지점 TEXT,
+                수준들 TEXT,
+                저장일시 TEXT,
+                작성자 TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_제조AI진단_레이어_버전_코드 ON 제조AI진단_레이어_버전 (코드)")
         conn.commit()
     finally:
         conn.close()
@@ -1793,7 +1808,7 @@ def 제조AI진단_레이어_추가(코드: str, 이름: str, 설명: str, ai개
     제조AI진단_레이어_목록.clear()
 
 
-def 제조AI진단_레이어_수정(코드: str, 변경필드: dict) -> None:
+def 제조AI진단_레이어_수정(코드: str, 변경필드: dict, 작성자: str = "직접 편집") -> None:
     허용_필드 = {"이름", "설명", "ai개입지점", "수준들"}
     반영할_필드 = {k: v for k, v in 변경필드.items() if k in 허용_필드}
     if not 반영할_필드:
@@ -1804,6 +1819,21 @@ def 제조AI진단_레이어_수정(코드: str, 변경필드: dict) -> None:
         반영할_필드["수준들"] = json.dumps(반영할_필드["수준들"], ensure_ascii=False)
     conn = sqlite3.connect(DB_PATH)
     try:
+        conn.row_factory = sqlite3.Row
+        현재행 = conn.execute(
+            "SELECT 이름, 설명, ai개입지점, 수준들 FROM 제조AI진단_레이어 WHERE 코드 = ?", (코드,)
+        ).fetchone()
+        if not 현재행:
+            return
+        # 노트_수정과 같은 관례 — 사라질 이전 상태를 UPDATE 직전에 스냅샷해 되돌릴 지점을 남긴다.
+        conn.execute(
+            "INSERT INTO 제조AI진단_레이어_버전 (코드, 이름, 설명, ai개입지점, 수준들, 저장일시, 작성자) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                코드, 현재행["이름"], 현재행["설명"], 현재행["ai개입지점"], 현재행["수준들"],
+                _dt.datetime.now().isoformat(timespec="seconds"), 작성자,
+            ),
+        )
         설정절 = ", ".join(f"{k} = ?" for k in 반영할_필드)
         conn.execute(
             f"UPDATE 제조AI진단_레이어 SET {설정절} WHERE 코드 = ?",
@@ -1813,6 +1843,36 @@ def 제조AI진단_레이어_수정(코드: str, 변경필드: dict) -> None:
     finally:
         conn.close()
     제조AI진단_레이어_목록.clear()
+
+
+def 제조AI진단_레이어_버전_목록(코드: str) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 코드, 이름, 저장일시, 작성자 FROM 제조AI진단_레이어_버전 WHERE 코드 = ? ORDER BY id DESC",
+            (코드,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def 제조AI진단_레이어_버전_조회(버전_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM 제조AI진단_레이어_버전 WHERE id = ?", (int(버전_id),)
+        ).fetchone()
+        if not row:
+            return None
+        항목 = dict(row)
+        항목["ai개입지점"] = json.loads(항목["ai개입지점"] or "[]")
+        항목["수준들"] = json.loads(항목["수준들"] or "[]")
+        return 항목
+    finally:
+        conn.close()
 
 
 def 제조AI진단_레이어_삭제(코드: str) -> None:

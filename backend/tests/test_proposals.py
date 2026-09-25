@@ -181,3 +181,24 @@ def test_제안_반영_propose_delete_diagnosis_layer(temp_db):
 
     chat._제안_반영(제안, repo.사업현황_불러오기(), 작성자="테스트")
     assert repo.제조AI진단_레이어_조회("L9") is None
+
+
+def test_제안_반영_propose_restore_diagnosis_layer(temp_db):
+    원본_설명 = repo.제조AI진단_레이어_조회("L1")["설명"]
+    repo.제조AI진단_레이어_수정("L1", {"설명": "임시로 바뀐 설명"}, 작성자="테스트")
+    버전_id = repo.제조AI진단_레이어_버전_목록("L1")[0]["id"]
+
+    제안 = {"유형": "propose_restore_diagnosis_layer", "인자": {"버전_id": 버전_id}}
+    요약 = chat._제안_요약(제안, repo.사업현황_불러오기())
+    assert any(c["필드"] == "설명" and c["새값"] == 원본_설명 for c in 요약["변경"])
+
+    chat._제안_반영(제안, repo.사업현황_불러오기(), 작성자="테스트")
+    assert repo.제조AI진단_레이어_조회("L1")["설명"] == 원본_설명
+    # 되돌리기 자체도 "수정 직전 상태"를 스냅샷하므로 버전이 하나 더 늘어난다.
+    assert len(repo.제조AI진단_레이어_버전_목록("L1")) == 2
+
+
+def test_제안_요약_propose_restore_diagnosis_layer_없는_버전(temp_db):
+    제안 = {"유형": "propose_restore_diagnosis_layer", "인자": {"버전_id": 9999}}
+    요약 = chat._제안_요약(제안, repo.사업현황_불러오기())
+    assert "오류" in 요약

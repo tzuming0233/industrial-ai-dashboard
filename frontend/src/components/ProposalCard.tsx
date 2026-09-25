@@ -68,7 +68,8 @@ export default function ProposalCard({ 요약, 처리중, onApply, onCancel }: P
             유형 === 'propose_add_diagnosis' ||
             유형 === 'propose_update_diagnosis' ||
             유형 === 'propose_add_diagnosis_layer' ||
-            유형 === 'propose_update_diagnosis_layer') && (
+            유형 === 'propose_update_diagnosis_layer' ||
+            유형 === 'propose_restore_diagnosis_layer') && (
             <>
               <p className="proposal-caption">
                 {유형 === 'propose_add_note' ? `새 노트: ${요약.제목}` : 요약.제목}
