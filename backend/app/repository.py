@@ -8,6 +8,7 @@ Streamlit import가 전혀 없다 — app.py(Streamlit)와 backend(FastAPI)가 �
 
 import datetime as _dt
 import importlib.util
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -358,6 +359,19 @@ def 투입인력_삭제(인력_id: int) -> None:
     finally:
         conn.close()
     투입인력_불러오기.clear()
+
+
+def 투입인력_단건조회(인력_id: int) -> dict | None:
+    """AI 채팅의 인력 삭제 제안 미리보기 — id만으로 이름/역할을 보여주기 위함."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, 사업_id, 이름, 역할 FROM 투입인력 WHERE id = ?", (int(인력_id),)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def 이력_DB_준비():
@@ -1560,6 +1574,116 @@ def 생성파일_불러오기(파일_id: int) -> dict | None:
         conn.close()
 
 
+# "풀스택 AI팩토리" 참조 문서의 L1~L9 정의 — 최초 DB_준비 때 제조AI진단_레이어
+# 테이블이 비어 있으면 이 값으로 시드한다. 시드 이후에는 DB가 진짜 출처이고,
+# AI 채팅의 propose_update_diagnosis_layer 등으로 계속 수정될 수 있다.
+_기본_제조AI진단_레이어들 = [
+    {
+        "코드": "L1",
+        "이름": "고객·비즈니스",
+        "설명": "수요·주문·SLA·비즈니스 가치를 정의하는 의도의 출발점",
+        "ai개입지점": ["수요예측 AI (계절성·프로모션·외부지표)", "주문 옵션 추천·구성 검증 AI", "가격·납기 견적 AI"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "주문·SLA 데이터 표준화, ERP 연계"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "기계가독 주문 스키마 → 온톨로지(L6) 매핑"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "고객 옵션 변경이 L5를 통해 즉시 제조에 반영"},
+        ],
+    },
+    {
+        "코드": "L2",
+        "이름": "제품·엔지니어링",
+        "설명": "제품을 기계가독 형태로 정의 — 제조기술서(L5)의 입력",
+        "ai개입지점": ["생성형 설계 지원·변형 설계 자동화", "DfM(제조성) 검토 AI", "BOP 자동 초안 생성"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "PLM–ERP–MES 마스터데이터 통합"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "표준 제품기술서 스키마·BOP 자동 초안"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "ECO → 영향 공정·설비 자동 식별 → 재배포"},
+        ],
+    },
+    {
+        "코드": "L3",
+        "이름": "기업 애플리케이션",
+        "설명": "계획·기록·재무·품질의 기준 시스템(SoR)",
+        "ai개입지점": ["APS ↔ Planning AI 연동", "품질 원인분석·CAPA 추천 AI", "자재 소요·재고 예측 AI"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "ERP·MES·PLM 데이터 통합, UNS 발행"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "MES 실행 기능 → L5 이관 시작(워크플로·스케줄)"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "앱은 얇게 — 화면·승인·기록만"},
+        ],
+    },
+    {
+        "코드": "L4",
+        "이름": "AI·제조 인텔리전스",
+        "설명": "판단을 만드는 레이어 — 모델은 제안만, 실행은 L5를 거침",
+        "ai개입지점": [
+            "ms급 추론은 L8 엣지로 위임, 분·시간급 판단만 여기서",
+            "에이전트 간 협업 프로토콜·에스컬레이션 규칙",
+            "드리프트·편향 모니터링과 자동 롤백",
+        ],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "Quick-win 모델 1~2종(비전·이상감지)"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "MLOps 기반 + 모델 3~5종 + 온톨로지 접지"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "에이전트 오케스트레이션·승인 등급화"},
+        ],
+    },
+    {
+        "코드": "L5",
+        "이름": "제조 컨트롤 플레인",
+        "설명": "의도를 실행으로 번역·검증·배포하는 경계면(SoE)",
+        "ai개입지점": ["Process Planner에 생성 AI(제조기술서 초안)", "Scheduler에 최적화·강화학습 모델", "예외 감지 → 에이전트 재계획 요청"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "워크플로 오케스트레이터·이벤트매니저(기존 MES 위)"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "스킬·레시피 매니저·캐퍼빌리티 매처·검증 게이트"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "제조기술서 자동생성·OTA 배포 전면 적용"},
+        ],
+    },
+    {
+        "코드": "L6",
+        "이름": "의미·지식",
+        "설명": "모든 레이어가 공유하는 의미 체계",
+        "ai개입지점": ["LLM·에이전트의 접지(환각 없는 계획·조회)", "그래프 기반 영향분석(ECO·설비고장 → 영향주문)", "AAS 인스턴스 자동 링크·스킬 추론"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "마스터데이터·자산목록 정비, 명명 규칙"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "온톨로지 v1·AAS 등록·스킬 카탈로그"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "협력사 AAS 연동·변환 규칙 자동화"},
+        ],
+    },
+    {
+        "코드": "L7",
+        "이름": "데이터 패브릭·디지털트윈",
+        "설명": "단일 데이터 접점(UNS)과 가상 검증(디지털트윈)",
+        "ai개입지점": ["스트리밍 이상감지(UNS 구독)", "트윈 기반 What-if·가상 커미셔닝", "합성데이터로 비전 모델 학습 보강"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "UNS·레이크하우스·히스토리안"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "운영 트윈·피처 스토어·데이터 품질 SLA"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "트윈 자동 검증이 OTA 배포의 필수 게이트"},
+        ],
+    },
+    {
+        "코드": "L8",
+        "이름": "엣지·제어",
+        "설명": "ms급 실시간 제어와 엣지 추론, 제어 추상화(SDC)",
+        "ai개입지점": ["엣지 추론: 비전 검사·이상감지(ms급)", "로봇 정책 모델 실행(학습은 L4)", "추론 ↔ 학습의 분리 — 모델 갱신은 OTA로 수신"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "게이트웨이·OPC UA 노출, 데이터 수집"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "스킬 인터페이스·소프트 PLC 파일럿 셀"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "OTA 수신·롤백, 벤더 교체 실증"},
+        ],
+    },
+    {
+        "코드": "L9",
+        "이름": "물리 실행",
+        "설명": "실제 가공·조립·이송·검사, 피지컬 AI 실행",
+        "ai개입지점": ["피지컬 AI: 로봇 정책 학습 결과 실행", "센서·비전 데이터가 학습 루프의 원천", "휴머노이드로 비정형·다품종 공정 커버"],
+        "수준들": [
+            {"수준": 1, "이름": "P1 통합", "설명": "센서·I/O 계장, 자산목록(AAS 후보)"},
+            {"수준": 2, "이름": "P2 추상화", "설명": "파일럿 셀 모듈화·레시피 외부화"},
+            {"수준": 3, "이름": "P3 디커플링", "설명": "SD-capable 장비 발주 기준·휴머노이드 도입"},
+        ],
+    },
+]
+
+
 def 제조AI진단_DB_준비():
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -1588,9 +1712,118 @@ def 제조AI진단_DB_준비():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_제조AI진단_응답_세션_id ON 제조AI진단_응답 (세션_id)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS 제조AI진단_레이어 (
+                코드 TEXT PRIMARY KEY,
+                이름 TEXT NOT NULL,
+                설명 TEXT,
+                ai개입지점 TEXT,
+                수준들 TEXT,
+                순서 INTEGER
+            )
+            """
+        )
+        레이어_있음 = conn.execute("SELECT COUNT(*) FROM 제조AI진단_레이어").fetchone()[0]
+        if not 레이어_있음:
+            conn.executemany(
+                "INSERT INTO 제조AI진단_레이어 (코드, 이름, 설명, ai개입지점, 수준들, 순서) VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        레이어["코드"], 레이어["이름"], 레이어["설명"],
+                        json.dumps(레이어["ai개입지점"], ensure_ascii=False),
+                        json.dumps(레이어["수준들"], ensure_ascii=False),
+                        순서,
+                    )
+                    for 순서, 레이어 in enumerate(_기본_제조AI진단_레이어들)
+                ],
+            )
         conn.commit()
     finally:
         conn.close()
+
+
+@_캐시
+def 제조AI진단_레이어_목록() -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT 코드, 이름, 설명, ai개입지점, 수준들 FROM 제조AI진단_레이어 ORDER BY 순서"
+        ).fetchall()
+        결과 = []
+        for row in rows:
+            항목 = dict(row)
+            항목["ai개입지점"] = json.loads(항목["ai개입지점"] or "[]")
+            항목["수준들"] = json.loads(항목["수준들"] or "[]")
+            결과.append(항목)
+        return 결과
+    finally:
+        conn.close()
+
+
+def 제조AI진단_레이어_조회(코드: str) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT 코드, 이름, 설명, ai개입지점, 수준들 FROM 제조AI진단_레이어 WHERE 코드 = ?", (코드,)
+        ).fetchone()
+        if not row:
+            return None
+        항목 = dict(row)
+        항목["ai개입지점"] = json.loads(항목["ai개입지점"] or "[]")
+        항목["수준들"] = json.loads(항목["수준들"] or "[]")
+        return 항목
+    finally:
+        conn.close()
+
+
+def 제조AI진단_레이어_추가(코드: str, 이름: str, 설명: str, ai개입지점: list[str], 수준들: list[dict]) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        순서 = conn.execute("SELECT COALESCE(MAX(순서), -1) + 1 FROM 제조AI진단_레이어").fetchone()[0]
+        conn.execute(
+            "INSERT INTO 제조AI진단_레이어 (코드, 이름, 설명, ai개입지점, 수준들, 순서) VALUES (?, ?, ?, ?, ?, ?)",
+            (코드, 이름, 설명, json.dumps(ai개입지점, ensure_ascii=False), json.dumps(수준들, ensure_ascii=False), 순서),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    제조AI진단_레이어_목록.clear()
+
+
+def 제조AI진단_레이어_수정(코드: str, 변경필드: dict) -> None:
+    허용_필드 = {"이름", "설명", "ai개입지점", "수준들"}
+    반영할_필드 = {k: v for k, v in 변경필드.items() if k in 허용_필드}
+    if not 반영할_필드:
+        return
+    if "ai개입지점" in 반영할_필드:
+        반영할_필드["ai개입지점"] = json.dumps(반영할_필드["ai개입지점"], ensure_ascii=False)
+    if "수준들" in 반영할_필드:
+        반영할_필드["수준들"] = json.dumps(반영할_필드["수준들"], ensure_ascii=False)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        설정절 = ", ".join(f"{k} = ?" for k in 반영할_필드)
+        conn.execute(
+            f"UPDATE 제조AI진단_레이어 SET {설정절} WHERE 코드 = ?",
+            (*반영할_필드.values(), 코드),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    제조AI진단_레이어_목록.clear()
+
+
+def 제조AI진단_레이어_삭제(코드: str) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("DELETE FROM 제조AI진단_응답 WHERE 레이어코드 = ?", (코드,))
+        conn.execute("DELETE FROM 제조AI진단_레이어 WHERE 코드 = ?", (코드,))
+        conn.commit()
+    finally:
+        conn.close()
+    제조AI진단_레이어_목록.clear()
 
 
 @_캐시

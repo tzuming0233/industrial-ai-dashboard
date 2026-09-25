@@ -62,7 +62,13 @@ export default function ProposalCard({ 요약, 처리중, onApply, onCancel }: P
 
           {(유형 === 'propose_update_business' ||
             유형 === 'propose_add_note' ||
-            유형 === 'propose_update_note') && (
+            유형 === 'propose_update_note' ||
+            유형 === 'propose_add_staffing' ||
+            유형 === 'propose_set_target' ||
+            유형 === 'propose_add_diagnosis' ||
+            유형 === 'propose_update_diagnosis' ||
+            유형 === 'propose_add_diagnosis_layer' ||
+            유형 === 'propose_update_diagnosis_layer') && (
             <>
               <p className="proposal-caption">
                 {유형 === 'propose_add_note' ? `새 노트: ${요약.제목}` : 요약.제목}
@@ -75,7 +81,10 @@ export default function ProposalCard({ 요약, 처리중, onApply, onCancel }: P
             </>
           )}
 
-          {(유형 === 'propose_delete_business' || 유형 === 'propose_delete_note') && (
+          {(유형 === 'propose_delete_business' ||
+            유형 === 'propose_delete_note' ||
+            유형 === 'propose_delete_staffing' ||
+            유형 === 'propose_delete_diagnosis_layer') && (
             <>
               <p className="proposal-warning">{요약.행?.length ?? 0}건이 삭제됩니다.</p>
               {요약.행 && <행테이블 행={요약.행} />}

@@ -1,5 +1,29 @@
+from backend.app import repository as repo
 from backend.app.ai_diagnosis import _전체단계_계산
 from backend.tests.test_conversations import _회원가입
+
+
+def test_레이어_시드_및_CRUD(temp_db):
+    시드됨 = repo.제조AI진단_레이어_목록()
+    assert len(시드됨) == 9
+    assert {l["코드"] for l in 시드됨} == {f"L{n}" for n in range(1, 10)}
+    assert 시드됨[0]["코드"] == "L1"  # 순서 보존
+
+    repo.제조AI진단_레이어_추가(
+        "L10", "확장 레이어", "테스트용", ["AI 기능 A"],
+        [{"수준": 1, "이름": "P1", "설명": "기준1"}],
+    )
+    목록 = repo.제조AI진단_레이어_목록()
+    assert len(목록) == 10
+    assert 목록[-1]["코드"] == "L10"
+    assert repo.제조AI진단_레이어_조회("L10")["이름"] == "확장 레이어"
+
+    repo.제조AI진단_레이어_수정("L10", {"이름": "수정된 이름"})
+    assert repo.제조AI진단_레이어_조회("L10")["이름"] == "수정된 이름"
+
+    repo.제조AI진단_레이어_삭제("L10")
+    assert repo.제조AI진단_레이어_조회("L10") is None
+    assert len(repo.제조AI진단_레이어_목록()) == 9
 
 
 def test_전체단계_계산_경계값():

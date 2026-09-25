@@ -132,6 +132,24 @@ SYSTEM_PROMPT = (
     "다만 노트끼리의 연결이라면, 노트 본문에 [[다른 노트 제목]]을 써넣으면 저장할 때 시스템이 자동으로 "
     "그래프에 연결한다는 점도 알아두세요 — 노트 내용을 정리하며 다른 노트를 언급할 때는 이 문법을 직접 "
     "써주는 것도 좋은 방법입니다(propose_add_note/propose_update_note의 content에 [[제목]]을 포함시키면 됨).\n"
+    "- '데이터 관리' 탭에는 사업별 투입 인력과 연도별 목표매출/목표손익이 있습니다. 사용자가 어떤 사업에 "
+    "누구를 투입했다고 말하거나 인력을 빼달라고 하면, 먼저 query_business_status로 사업 id를, "
+    "query_staffing으로 현재 인력을 확인한 뒤 propose_add_staffing/propose_delete_staffing으로 제안하세요. "
+    "연도별 목표를 설정/수정해달라는 요청에는 query_annual_targets로 기존 값을 먼저 확인한 뒤 "
+    "propose_set_target으로 제안하세요.\n"
+    "- 'AI수준진단' 탭은 제조 현장의 AI 성숙도를 L1~L9 레이어별로 평가하는 도구입니다. 사용자가 어떤 "
+    "기업/현장의 상황을 설명하며 진단해달라고 하면: ① query_diagnosis_framework로 각 레이어의 P1/P2/P3 "
+    "기준을 확인하고, ② query_diagnosis_sessions로 그 대상의 기존 진단이 있는지 확인한 뒤, ③ 있으면 "
+    "propose_update_diagnosis, 없으면 propose_add_diagnosis로 레이어별 수준을 제안하세요. **대화에서 실제로 "
+    "언급된 근거가 있는 레이어만 채우고, 근거가 부족한 레이어는 절대 추측해서 채우지 마세요** — 애매하면 "
+    "ask_clarifying_question으로 구체적으로 되묻거나 해당 레이어를 비워두세요. 이 판단은 사업현황처럼 "
+    "DB에 있는 확정된 사실이 아니라 대화 내용에 대한 당신의 해석이므로, 제안 후 왜 그렇게 판단했는지 "
+    "답변에서 짧게 근거를 설명하세요.\n"
+    "- 반면 사용자가 진단 대상이 아니라 **진단 방법론 자체**(레이어 정의, 기준 문구, 새 레이어 추가/삭제)를 "
+    "고쳐달라고 명시적으로 요청할 때만 propose_add_diagnosis_layer/propose_update_diagnosis_layer/"
+    "propose_delete_diagnosis_layer를 쓰세요 — code는 반드시 query_diagnosis_framework로 먼저 확인하고, "
+    "위의 진단 작성 규칙과 절대 혼동하지 마세요(예: '이 기업은 아직 초기 단계야'는 진단 작성이고, "
+    "'L5 기준을 이렇게 바꿔줘'는 프레임워크 수정입니다).\n"
     "- 사내 데이터로 답할 수 없는 최신 정보(뉴스, 특정 기업/기술 동향, 최근 정책·규정, 업계 시황 등)가 "
     "필요하면 web_search로 실제로 찾아본 뒤 답하세요. 사업현황·노트·온톨로지로 답할 수 있는 질문에는 "
     "굳이 웹 검색을 쓰지 마세요.\n"
@@ -487,6 +505,253 @@ TOOLS = [
         },
     },
     {
+        "name": "query_staffing",
+        "description": (
+            "특정 사업에 투입된 인력(이름·역할) 목록을 조회한다. 사업 id는 반드시 "
+            "query_business_status로 먼저 조회해 확인해야 한다. 인력을 추가/삭제하자고 "
+            "제안하기 전에 중복 추가를 피하려면 먼저 이걸로 현재 인력을 확인하라."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "business_id": {"type": "integer", "description": "사업 id (query_business_status 결과의 id)"},
+            },
+            "required": ["business_id"],
+        },
+    },
+    {
+        "name": "propose_add_staffing",
+        "description": (
+            "특정 사업에 투입 인력 1명 이상을 추가하자고 제안한다. 실제로 저장하지 않고 화면에 "
+            "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. 사업 id는 반드시 "
+            "query_business_status로 먼저 조회해 확인해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "business_id": {"type": "integer", "description": "인력을 투입할 사업의 id"},
+                "people": {
+                    "type": "array",
+                    "description": "추가할 인력 목록",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "인력 이름"},
+                            "role": {"type": "string", "description": "역할/직책"},
+                        },
+                        "required": ["name"],
+                    },
+                },
+            },
+            "required": ["business_id", "people"],
+        },
+    },
+    {
+        "name": "propose_delete_staffing",
+        "description": (
+            "투입 인력 1명 이상을 삭제하자고 제안한다. 실제로 삭제하지 않고 화면에 삭제 대상 "
+            "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. id는 반드시 query_staffing으로 "
+            "먼저 조회해 확인한 값을 사용해야 한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "staffing_ids": {"type": "array", "items": {"type": "integer"}, "description": "삭제할 인력 id 목록"},
+            },
+            "required": ["staffing_ids"],
+        },
+    },
+    {
+        "name": "query_annual_targets",
+        "description": "'데이터 관리' 탭에 설정된 연도별 목표매출·목표손익을 전부 조회한다.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "propose_set_target",
+        "description": (
+            "특정 연도의 목표매출·목표손익을 설정(또는 기존 값 수정)하자고 제안한다. 실제로 "
+            "저장하지 않고 화면에 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. 이미 "
+            "그 연도 목표가 있으면 덮어쓴다 — 기존 값을 보여주려면 먼저 query_annual_targets로 "
+            "확인하라."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "year": {"type": "integer", "description": "목표 연도"},
+                "target_revenue": {"type": "integer", "description": "목표매출(원)"},
+                "target_profit": {"type": "integer", "description": "목표손익(원)"},
+            },
+            "required": ["year", "target_revenue", "target_profit"],
+        },
+    },
+    {
+        "name": "query_diagnosis_sessions",
+        "description": (
+            "'AI수준진단' 탭에 이미 만들어진 진단 세션들을 조회한다. 대상명을 지정하면 부분일치로 "
+            "찾아주고, 각 세션의 레이어별 현재 수준(있는 경우)도 함께 돌려준다. 사용자가 이야기하는 "
+            "대상의 진단이 이미 있는지 확인하고, 있으면 그 세션 id로 propose_update_diagnosis를, "
+            "없으면 propose_add_diagnosis를 쓰기 위해 먼저 호출한다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_name": {"type": "string", "description": "대상명에서 찾을 키워드(선택, 없으면 전체 목록)"},
+            },
+        },
+    },
+    {
+        "name": "query_diagnosis_framework",
+        "description": (
+            "'AI수준진단'이 쓰는 L1~L9 레이어 정의(이름·설명·AI 개입 지점·P1/P2/P3 성숙 기준)를 "
+            "조회한다. 진단을 작성/수정하기 전에 각 레이어가 무엇을 뜻하는지 확인하거나, 프레임워크 "
+            "자체를 수정하자고 제안하기 전에 현재 정의를 확인하려면 이걸 먼저 호출한다."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "propose_add_diagnosis",
+        "description": (
+            "새로운 대상(기업/현장)의 제조 AI수준진단을 만들자고 제안한다. 실제로 저장하지 않고 "
+            "화면에 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. 사용자가 대화 중 설명한 "
+            "현장 상황을 근거로 query_diagnosis_framework의 P1/P2/P3 기준에 맞춰 레이어별 수준을 "
+            "판단하되, 근거가 없는 레이어는 포함하지 말고(비워두고) 판단 근거를 짧게 답변에서 "
+            "설명하라 — 확신이 안 서면 추측하지 말고 ask_clarifying_question으로 먼저 물어라. "
+            "이 대상의 진단이 이미 있는지 query_diagnosis_sessions로 먼저 확인해야 한다(있으면 "
+            "propose_update_diagnosis를 대신 써야 한다)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_name": {"type": "string", "description": "진단 대상명(예: 기업명)"},
+                "memo": {"type": "string", "description": "진단 배경 메모(선택)"},
+                "assessments": {
+                    "type": "array",
+                    "description": "레이어별 평가 — 근거가 있는 레이어만 포함한다",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "layer_code": {"type": "string", "description": "레이어 코드(예: 'L1')"},
+                            "level": {
+                                "type": "integer",
+                                "description": "0=미착수, 1=P1 통합, 2=P2 추상화, 3=P3 디커플링",
+                            },
+                            "note": {"type": "string", "description": "이 레이어에 대한 근거/메모(선택)"},
+                        },
+                        "required": ["layer_code", "level"],
+                    },
+                },
+            },
+            "required": ["target_name", "assessments"],
+        },
+    },
+    {
+        "name": "propose_update_diagnosis",
+        "description": (
+            "기존 진단 세션의 레이어별 수준을 수정하자고 제안한다. 실제로 저장하지 않고 화면에 "
+            "미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. session_id는 반드시 "
+            "query_diagnosis_sessions로 먼저 조회해 확인한 값을 사용해야 한다. propose_add_diagnosis와 "
+            "같은 근거 원칙(추측 금지, 불확실하면 되묻기)을 따른다."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "integer", "description": "수정할 진단 세션 id (query_diagnosis_sessions 결과)"},
+                "assessments": {
+                    "type": "array",
+                    "description": "수정할 레이어별 평가",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "layer_code": {"type": "string", "description": "레이어 코드(예: 'L1')"},
+                            "level": {
+                                "type": "integer",
+                                "description": "0=미착수, 1=P1 통합, 2=P2 추상화, 3=P3 디커플링",
+                            },
+                            "note": {"type": "string", "description": "이 레이어에 대한 근거/메모(선택)"},
+                        },
+                        "required": ["layer_code", "level"],
+                    },
+                },
+            },
+            "required": ["session_id", "assessments"],
+        },
+    },
+    {
+        "name": "propose_add_diagnosis_layer",
+        "description": (
+            "AI수준진단 프레임워크에 레이어(예: L10)를 새로 추가하자고 제안한다. 실제로 저장하지 "
+            "않고 화면에 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. **사용자가 진단 "
+            "방법론/레이어 정의 자체를 바꿔달라고 명시적으로 요청했을 때만** 사용하라 — 특정 대상을 "
+            "진단하는 것(propose_add_diagnosis)과 혼동하지 마라."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "레이어 코드(예: 'L10') — 기존과 겹치지 않아야 함"},
+                "name": {"type": "string", "description": "레이어 이름"},
+                "description": {"type": "string", "description": "레이어 한 줄 설명"},
+                "ai_touchpoints": {
+                    "type": "array", "items": {"type": "string"}, "description": "참고용 AI 개입 지점 목록",
+                },
+                "levels": {
+                    "type": "array",
+                    "description": "이 레이어의 성숙 단계 정의(보통 3단계)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "level": {"type": "integer", "description": "단계 번호(1,2,3...)"},
+                            "name": {"type": "string", "description": "단계 이름(예: 'P1 통합')"},
+                            "description": {"type": "string", "description": "이 단계의 성숙 기준"},
+                        },
+                        "required": ["level", "name", "description"],
+                    },
+                },
+            },
+            "required": ["code", "name", "description"],
+        },
+    },
+    {
+        "name": "propose_update_diagnosis_layer",
+        "description": (
+            "AI수준진단 프레임워크의 기존 레이어(이름/설명/AI 개입 지점/성숙 기준)를 수정하자고 "
+            "제안한다. 실제로 저장하지 않고 화면에 미리보기를 띄워 사용자 확인을 받기 위한 제안만 "
+            "만든다. code는 반드시 query_diagnosis_framework로 먼저 조회해 확인해야 한다. "
+            "**사용자가 진단 방법론/기준 문구 자체를 바꿔달라고 명시적으로 요청했을 때만** "
+            "사용하라 — 특정 대상을 진단하는 것과 혼동하지 마라."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "수정할 레이어 코드(예: 'L5')"},
+                "changes": {
+                    "type": "object",
+                    "description": (
+                        "한글 필드명: 새 값 쌍(이 안의 키는 한글 그대로 사용). "
+                        "예: {\"설명\": \"새 설명\", \"ai개입지점\": [\"항목1\", \"항목2\"], "
+                        "\"수준들\": [{\"수준\": 1, \"이름\": \"P1 통합\", \"설명\": \"새 기준\"}]}"
+                    ),
+                },
+            },
+            "required": ["code", "changes"],
+        },
+    },
+    {
+        "name": "propose_delete_diagnosis_layer",
+        "description": (
+            "AI수준진단 프레임워크에서 레이어 1개를 삭제하자고 제안한다. 실제로 삭제하지 않고 화면에 "
+            "삭제 대상 미리보기를 띄워 사용자 확인을 받기 위한 제안만 만든다. code는 반드시 "
+            "query_diagnosis_framework로 먼저 조회해 확인해야 한다. **사용자가 진단 방법론 자체를 "
+            "바꿔달라고 명시적으로 요청했을 때만** 사용하라."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "삭제할 레이어 코드"},
+            },
+            "required": ["code"],
+        },
+    },
+    {
         "name": "create_file",
         "description": (
             "사용자가 다운로드할 수 있는 실제 파일을 만든다. 확인 없이 즉시 만들어져 채팅에 다운로드 "
@@ -581,6 +846,9 @@ def _도구_목록_결정(실제_모델: str) -> list:
     "propose_add_business", "propose_update_business", "propose_delete_business", "propose_add_relations",
     "import_uploaded_file_as_data", "propose_delete_relations", "propose_update_relations",
     "propose_add_note", "propose_update_note", "propose_delete_note",
+    "propose_add_staffing", "propose_delete_staffing", "propose_set_target",
+    "propose_add_diagnosis", "propose_update_diagnosis",
+    "propose_add_diagnosis_layer", "propose_update_diagnosis_layer", "propose_delete_diagnosis_layer",
 }
 
 # 스트리밍 중 "지금 뭘 하고 있는지" 화면에 보여주기 위한 도구별 상태 문구.
@@ -600,6 +868,18 @@ _도구_상태_문구 = {
     "propose_add_note": "노트 내용을 정리하는 중...",
     "propose_update_note": "수정할 노트 내용을 정리하는 중...",
     "propose_delete_note": "삭제할 노트를 정리하는 중...",
+    "query_staffing": "투입 인력을 조회하는 중...",
+    "propose_add_staffing": "추가할 인력을 정리하는 중...",
+    "propose_delete_staffing": "삭제할 인력을 정리하는 중...",
+    "query_annual_targets": "연간 목표를 조회하는 중...",
+    "propose_set_target": "목표 설정을 정리하는 중...",
+    "query_diagnosis_sessions": "진단 세션을 조회하는 중...",
+    "query_diagnosis_framework": "진단 프레임워크를 조회하는 중...",
+    "propose_add_diagnosis": "진단 내용을 정리하는 중...",
+    "propose_update_diagnosis": "수정할 진단 내용을 정리하는 중...",
+    "propose_add_diagnosis_layer": "추가할 레이어를 정리하는 중...",
+    "propose_update_diagnosis_layer": "수정할 레이어 정의를 정리하는 중...",
+    "propose_delete_diagnosis_layer": "삭제할 레이어를 정리하는 중...",
     "create_file": "파일을 만드는 중...",
     "ask_clarifying_question": "질문을 정리하는 중...",
     "web_search": "웹을 검색하는 중...",
@@ -919,6 +1199,113 @@ def propose_delete_note(노트_id_목록: list[int]) -> dict:
     return {"확인": f"{len(노트_id_목록)}개 노트 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
 
 
+def query_staffing(사업_id: int) -> list[dict]:
+    """repository.py의 투입인력_불러오기와 같은 쿼리를 여기서도 직접 짠다 — query_notes와
+    같은 관례(이 파일은 repository.py를 거치지 않고 자체 커넥션으로 SQLite를 읽는다)."""
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, 이름, 역할 FROM 투입인력 WHERE 사업_id = ? ORDER BY id", (사업_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def propose_add_staffing(사업_id: int, 인력목록: list[dict]) -> dict:
+    return {"확인": f"사업#{사업_id}에 인력 {len(인력목록)}명 추가를 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def propose_delete_staffing(인력_id_목록: list[int]) -> dict:
+    return {"확인": f"인력 {len(인력_id_목록)}명 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def query_annual_targets() -> list[dict]:
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT 연도, 목표매출, 목표손익 FROM 연간목표 ORDER BY 연도 DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def propose_set_target(연도: int, 목표매출: int, 목표손익: int) -> dict:
+    return {
+        "확인": f"{연도}년 목표(매출 {목표매출:,}원·손익 {목표손익:,}원) 설정을 제안했습니다. 화면에서 확인 후 반영됩니다."
+    }
+
+
+def query_diagnosis_sessions(대상명: str | None = None) -> list[dict]:
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        쿼리 = "SELECT id, 대상명, 작성자, 수정일시 FROM 제조AI진단_세션"
+        파라미터: list = []
+        if 대상명:
+            쿼리 += " WHERE 대상명 LIKE ?"
+            파라미터 = [f"%{대상명}%"]
+        쿼리 += " ORDER BY 수정일시 DESC LIMIT 30"
+        세션들 = [dict(row) for row in conn.execute(쿼리, 파라미터).fetchall()]
+        for 세션 in 세션들:
+            응답_rows = conn.execute(
+                "SELECT 레이어코드, 수준, 메모 FROM 제조AI진단_응답 WHERE 세션_id = ?", (세션["id"],)
+            ).fetchall()
+            세션["응답"] = [dict(row) for row in 응답_rows]
+        return 세션들
+    finally:
+        conn.close()
+
+
+def query_diagnosis_framework() -> list[dict]:
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT 코드, 이름, 설명, ai개입지점, 수준들 FROM 제조AI진단_레이어 ORDER BY 순서"
+        ).fetchall()
+        결과 = []
+        for row in rows:
+            항목 = dict(row)
+            항목["ai개입지점"] = json.loads(항목["ai개입지점"] or "[]")
+            항목["수준들"] = json.loads(항목["수준들"] or "[]")
+            결과.append(항목)
+        return 결과
+    finally:
+        conn.close()
+
+
+def propose_add_diagnosis(대상명: str, 평가목록: list[dict], 메모: str = "") -> dict:
+    return {"확인": f"'{대상명}' 진단(레이어 {len(평가목록)}개) 생성을 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def propose_update_diagnosis(세션_id: int, 평가목록: list[dict]) -> dict:
+    return {"확인": f"진단 세션#{세션_id}의 레이어 {len(평가목록)}개 수정을 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def propose_add_diagnosis_layer(코드: str, 이름: str, 설명: str, ai개입지점: list[str] | None = None, 수준들: list[dict] | None = None) -> dict:
+    return {"확인": f"진단 프레임워크에 '{코드} {이름}' 레이어 추가를 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def propose_update_diagnosis_layer(코드: str, 변경필드: dict) -> dict:
+    return {"확인": f"'{코드}' 레이어의 {list(변경필드.keys())} 수정을 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
+def propose_delete_diagnosis_layer(코드: str) -> dict:
+    return {"확인": f"'{코드}' 레이어 삭제를 제안했습니다. 화면에서 확인 후 반영됩니다."}
+
+
 def create_file(파일명: str, 내용: str) -> dict:
     """다른 propose_* 함수들처럼 확인 문구만 돌려준다 — 실제 바이트 생성은 스트리밍 루프
     (질의하기_스트림)에서만 하고 tool_result에는 포함하지 않는다(컨텍스트에 바이너리를 안 넣기 위함).
@@ -976,6 +1363,19 @@ _상위_키_매핑 = {
     "propose_add_note": {"title": "제목", "content": "내용", "tags": "태그"},
     "propose_update_note": {"changes": "변경필드"},
     "propose_delete_note": {"note_ids": "노트_id_목록"},
+    "query_staffing": {"business_id": "사업_id"},
+    "propose_add_staffing": {"business_id": "사업_id", "people": "인력목록"},
+    "propose_delete_staffing": {"staffing_ids": "인력_id_목록"},
+    "propose_set_target": {"year": "연도", "target_revenue": "목표매출", "target_profit": "목표손익"},
+    "query_diagnosis_sessions": {"target_name": "대상명"},
+    "propose_add_diagnosis": {"target_name": "대상명", "memo": "메모", "assessments": "평가목록"},
+    "propose_update_diagnosis": {"session_id": "세션_id", "assessments": "평가목록"},
+    "propose_add_diagnosis_layer": {
+        "code": "코드", "name": "이름", "description": "설명",
+        "ai_touchpoints": "ai개입지점", "levels": "수준들",
+    },
+    "propose_update_diagnosis_layer": {"code": "코드", "changes": "변경필드"},
+    "propose_delete_diagnosis_layer": {"code": "코드"},
     "create_file": {"filename": "파일명", "content": "내용"},
     "ask_clarifying_question": {"question": "질문", "options": "선택지"},
 }
@@ -995,6 +1395,12 @@ _관계항목_키_매핑 = {
 
 _관계수정항목_키_매핑 = {"relation_id": "관계_id", "relation_type": "관계유형", "description": "설명"}
 
+_인력항목_키_매핑 = {"name": "이름", "role": "역할"}
+
+_진단평가항목_키_매핑 = {"layer_code": "레이어코드", "level": "수준", "note": "메모"}
+
+_진단수준항목_키_매핑 = {"level": "수준", "name": "이름", "description": "설명"}
+
 
 def _키_변환(항목: dict, 매핑: dict) -> dict:
     return {매핑.get(k, k): v for k, v in 항목.items()}
@@ -1009,6 +1415,12 @@ def _도구_인자_한글화(name: str, tool_input: dict) -> dict:
         변환됨["관계목록"] = [_키_변환(항목, _관계항목_키_매핑) for 항목 in 변환됨.get("관계목록", [])]
     elif name == "propose_update_relations":
         변환됨["변경목록"] = [_키_변환(항목, _관계수정항목_키_매핑) for 항목 in 변환됨.get("변경목록", [])]
+    elif name == "propose_add_staffing":
+        변환됨["인력목록"] = [_키_변환(항목, _인력항목_키_매핑) for 항목 in 변환됨.get("인력목록", [])]
+    elif name in ("propose_add_diagnosis", "propose_update_diagnosis"):
+        변환됨["평가목록"] = [_키_변환(항목, _진단평가항목_키_매핑) for 항목 in 변환됨.get("평가목록", [])]
+    elif name == "propose_add_diagnosis_layer":
+        변환됨["수준들"] = [_키_변환(항목, _진단수준항목_키_매핑) for 항목 in 변환됨.get("수준들", [])]
     return 변환됨
 
 
@@ -1043,6 +1455,30 @@ def _도구_실행(name: str, tool_input: dict):
         return propose_update_note(**tool_input)
     if name == "propose_delete_note":
         return propose_delete_note(**tool_input)
+    if name == "query_staffing":
+        return query_staffing(**tool_input)
+    if name == "propose_add_staffing":
+        return propose_add_staffing(**tool_input)
+    if name == "propose_delete_staffing":
+        return propose_delete_staffing(**tool_input)
+    if name == "query_annual_targets":
+        return query_annual_targets(**tool_input)
+    if name == "propose_set_target":
+        return propose_set_target(**tool_input)
+    if name == "query_diagnosis_sessions":
+        return query_diagnosis_sessions(**tool_input)
+    if name == "query_diagnosis_framework":
+        return query_diagnosis_framework(**tool_input)
+    if name == "propose_add_diagnosis":
+        return propose_add_diagnosis(**tool_input)
+    if name == "propose_update_diagnosis":
+        return propose_update_diagnosis(**tool_input)
+    if name == "propose_add_diagnosis_layer":
+        return propose_add_diagnosis_layer(**tool_input)
+    if name == "propose_update_diagnosis_layer":
+        return propose_update_diagnosis_layer(**tool_input)
+    if name == "propose_delete_diagnosis_layer":
+        return propose_delete_diagnosis_layer(**tool_input)
     if name == "create_file":
         return create_file(**tool_input)
     if name == "ask_clarifying_question":

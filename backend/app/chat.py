@@ -108,6 +108,19 @@ def _API용_기록_구성(대화_id: int, 이전_기록: list[dict]) -> list[dic
     ] + [{"role": m["role"], "content": m["content"]} for m in 최근]
 
 
+def _수준_이름(레이어코드: str, 수준: int) -> str:
+    """AI수준진단 제안 미리보기에서 0/1/2/3을 '미착수'/'P1 통합'/... 이름으로 바꾼다."""
+    if not 수준:
+        return "미착수"
+    레이어 = repo.제조AI진단_레이어_조회(레이어코드)
+    if not 레이어:
+        return str(수준)
+    for lv in 레이어.get("수준들", []):
+        if lv.get("수준") == 수준:
+            return lv.get("이름", str(수준))
+    return str(수준)
+
+
 def _제안_요약(제안: dict, 전체_df: pd.DataFrame) -> dict:
     """대기 중인 제안을 프론트가 그대로 렌더링할 수 있는 JSON으로 요약한다."""
     유형 = 제안.get("유형")
@@ -235,6 +248,115 @@ def _제안_요약(제안: dict, 전체_df: pd.DataFrame) -> dict:
                 if 인자.get(필드) is not None
             ],
         }
+    if 유형 == "propose_add_staffing":
+        사업_id = 인자.get("사업_id")
+        라벨 = _사업_라벨_맵(전체_df).get(사업_id, f"사업#{사업_id}")
+        인력목록 = 인자.get("인력목록", [])
+        return {
+            "유형": 유형,
+            "대상id": None,
+            "제목": f"{라벨}에 인력 추가",
+            "변경": [
+                {"필드": p.get("이름", ""), "이전값": None, "새값": p.get("역할", "")}
+                for p in 인력목록
+            ],
+        }
+    if 유형 == "propose_delete_staffing":
+        인력_id_목록 = 인자.get("인력_id_목록", [])
+        대상들 = [r for r in (repo.투입인력_단건조회(i) for i in 인력_id_목록) if r]
+        if not 대상들:
+            return {"유형": 유형, "오류": "삭제할 인력을 찾을 수 없습니다."}
+        return {"유형": 유형, "행": [{"이름": r["이름"], "역할": r["역할"]} for r in 대상들]}
+    if 유형 == "propose_set_target":
+        연도 = 인자.get("연도")
+        목표_df = repo.연간목표_불러오기()
+        기존행 = 목표_df[목표_df["연도"] == 연도] if "연도" in 목표_df.columns else 목표_df.iloc[0:0]
+        기존 = 기존행.iloc[0] if not 기존행.empty else None
+        return {
+            "유형": 유형,
+            "대상id": None,
+            "제목": f"{연도}년 목표",
+            "변경": [
+                {
+                    "필드": "목표매출",
+                    "이전값": None if 기존 is None else int(기존["목표매출"]),
+                    "새값": 인자.get("목표매출"),
+                },
+                {
+                    "필드": "목표손익",
+                    "이전값": None if 기존 is None else int(기존["목표손익"]),
+                    "새값": 인자.get("목표손익"),
+                },
+            ],
+        }
+    if 유형 in ("propose_add_diagnosis", "propose_update_diagnosis"):
+        평가목록 = 인자.get("평가목록", [])
+        레이어_이름_맵 = {l["코드"]: l["이름"] for l in repo.제조AI진단_레이어_목록()}
+        if 유형 == "propose_add_diagnosis":
+            대상명 = 인자.get("대상명", "")
+            return {
+                "유형": 유형,
+                "대상id": None,
+                "제목": f"새 진단: {대상명}",
+                "변경": [
+                    {
+                        "필드": f"{a.get('레이어코드')} · {레이어_이름_맵.get(a.get('레이어코드'), '')}",
+                        "이전값": None,
+                        "새값": _수준_이름(a.get("레이어코드"), a.get("수준")),
+                    }
+                    for a in 평가목록
+                ],
+            }
+        세션_id = 인자.get("세션_id")
+        세션 = repo.제조AI진단_세션_조회(세션_id)
+        if not 세션:
+            return {"유형": 유형, "오류": f"진단 세션#{세션_id}을 찾을 수 없습니다."}
+        기존_맵 = {r["레이어코드"]: r["수준"] for r in 세션.get("응답", [])}
+        return {
+            "유형": 유형,
+            "대상id": 세션_id,
+            "제목": f"{세션['대상명']} (진단#{세션_id})",
+            "변경": [
+                {
+                    "필드": f"{a.get('레이어코드')} · {레이어_이름_맵.get(a.get('레이어코드'), '')}",
+                    "이전값": _수준_이름(a.get("레이어코드"), 기존_맵.get(a.get("레이어코드"), 0)),
+                    "새값": _수준_이름(a.get("레이어코드"), a.get("수준")),
+                }
+                for a in 평가목록
+            ],
+        }
+    if 유형 == "propose_add_diagnosis_layer":
+        return {
+            "유형": 유형,
+            "대상id": None,
+            "제목": f"새 레이어: {인자.get('코드')} {인자.get('이름', '')}",
+            "변경": [
+                {"필드": 필드, "이전값": None, "새값": 인자.get(필드)}
+                for 필드 in ("이름", "설명", "ai개입지점", "수준들")
+                if 인자.get(필드) is not None
+            ],
+        }
+    if 유형 == "propose_update_diagnosis_layer":
+        코드 = 인자.get("코드")
+        기존 = repo.제조AI진단_레이어_조회(코드)
+        if not 기존:
+            return {"유형": 유형, "오류": f"'{코드}' 레이어를 찾을 수 없습니다."}
+        변경필드 = 인자.get("변경필드", {})
+        return {
+            "유형": 유형,
+            "대상id": None,
+            "제목": f"{코드} {기존.get('이름', '')}",
+            "변경": [
+                {"필드": 필드, "이전값": 기존.get(필드), "새값": 새값}
+                for 필드, 새값 in 변경필드.items()
+            ],
+        }
+    if 유형 == "propose_delete_diagnosis_layer":
+        코드 = 인자.get("코드")
+        기존 = repo.제조AI진단_레이어_조회(코드)
+        if not 기존:
+            return {"유형": 유형, "오류": f"'{코드}' 레이어를 찾을 수 없습니다."}
+        return {"유형": 유형, "행": [{"코드": 코드, "이름": 기존.get("이름", "")}]}
     return {"유형": 유형, "오류": "알 수 없는 제안 유형"}
 
 
@@ -294,6 +416,44 @@ def _제안_반영(제안: dict, 전체_df: pd.DataFrame, 작성자: str = "AI�
         최신 = repo.노트_불러오기(대상id)
         if 최신:
             _노트_재임베딩(대상id, 최신.get("제목", ""), 최신.get("내용", "") or "")
+    elif 유형 == "propose_add_staffing":
+        사업_id = 인자.get("사업_id")
+        for p in 인자.get("인력목록", []):
+            repo.투입인력_저장(사업_id, p.get("이름", ""), p.get("역할", ""))
+    elif 유형 == "propose_delete_staffing":
+        for 인력_id in 인자.get("인력_id_목록", []):
+            repo.투입인력_삭제(인력_id)
+    elif 유형 == "propose_set_target":
+        repo.연간목표_저장(인자.get("연도"), 인자.get("목표매출"), 인자.get("목표손익"))
+    elif 유형 == "propose_add_diagnosis":
+        새_id = repo.제조AI진단_세션_생성(
+            인자.get("대상명", ""), 작성자, 메모=인자.get("메모", "")
+        )
+        repo.제조AI진단_응답_일괄저장(
+            새_id,
+            [
+                {"레이어코드": a.get("레이어코드"), "수준": a.get("수준", 0), "메모": a.get("메모", "")}
+                for a in 인자.get("평가목록", [])
+            ],
+        )
+    elif 유형 == "propose_update_diagnosis":
+        세션_id = 인자.get("세션_id")
+        repo.제조AI진단_응답_일괄저장(
+            세션_id,
+            [
+                {"레이어코드": a.get("레이어코드"), "수준": a.get("수준", 0), "메모": a.get("메모", "")}
+                for a in 인자.get("평가목록", [])
+            ],
+        )
+    elif 유형 == "propose_add_diagnosis_layer":
+        repo.제조AI진단_레이어_추가(
+            인자.get("코드"), 인자.get("이름", ""), 인자.get("설명", ""),
+            인자.get("ai개입지점", []), 인자.get("수준들", []),
+        )
+    elif 유형 == "propose_update_diagnosis_layer":
+        repo.제조AI진단_레이어_수정(인자.get("코드"), 인자.get("변경필드", {}))
+    elif 유형 == "propose_delete_diagnosis_layer":
+        repo.제조AI진단_레이어_삭제(인자.get("코드"))
 
 
 # ---------------- 대화 CRUD ----------------
