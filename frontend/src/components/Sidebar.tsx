@@ -159,7 +159,12 @@ export default function Sidebar({
   function 대화_행(d: 대화) {
     const 선택됨 = d.id === currentId
     return (
-      <div key={d.id} className={`conv-row ${선택됨 ? 'conv-row-active' : ''}`}>
+      <div
+        key={d.id}
+        role="listitem"
+        aria-current={선택됨 ? 'page' : undefined}
+        className={`conv-row ${선택됨 ? 'conv-row-active' : ''}`}
+      >
         {편집중_id === d.id ? (
           <input
             className="conv-row-edit-input"
@@ -186,6 +191,7 @@ export default function Sidebar({
             onClick={() => onSelect(d.id)}
             onDoubleClick={() => 편집_시작(d)}
             title="더블클릭하여 이름 바꾸기"
+            aria-label={`'${d.제목 || '제목 없음'}' 대화 열기 — 더블클릭하면 이름을 바꿀 수 있습니다`}
           >
             {d.제목 || `새 대화 (${생성일시_표시(d.생성일시)})`}
             {d.프로젝트_id && 프로젝트_이름_맵.get(d.프로젝트_id) && (
@@ -214,7 +220,7 @@ export default function Sidebar({
   }
 
   return (
-    <div className="sidebar">
+    <nav className="sidebar" aria-label="대화·프로젝트 탐색">
       <button
         className="btn btn-primary btn-block sidebar-action-btn"
         onClick={onNew}
@@ -230,6 +236,7 @@ export default function Sidebar({
           ref={검색_입력_ref}
           className="text-input search-input"
           placeholder="대화 검색 (Ctrl+K)"
+          aria-label="대화 검색"
           value={검색어}
           onChange={(e) => set검색어(e.target.value)}
           onKeyDown={(e) => {
@@ -241,7 +248,7 @@ export default function Sidebar({
         />
       </div>
 
-      <div className="conv-list">
+      <div className="conv-list" role="list" aria-label="대화 목록">
         {검색_결과 !== null ? (
           <div className="conv-group">
             <p className="conv-group-label">검색 결과{!검색_로딩 && ` (${검색_결과.length})`}</p>
@@ -253,8 +260,10 @@ export default function Sidebar({
               <button
                 key={r.대화_id}
                 type="button"
+                role="listitem"
                 className="search-result-row"
                 onClick={() => 검색결과_선택(r.대화_id)}
+                aria-label={`'${r.제목 || '새 대화'}' 검색 결과 열기`}
               >
                 <span className="search-result-title-row">
                   <span className="search-result-title">{r.제목 || '새 대화'}</span>
@@ -294,6 +303,7 @@ export default function Sidebar({
                   className={`project-row ${p.id === 현재_프로젝트_id ? 'project-row-active' : ''}`}
                   onClick={() => onOpenProject(p.id)}
                   title={p.설명 || p.이름}
+                  aria-current={p.id === 현재_프로젝트_id ? 'page' : undefined}
                 >
                   <span className="project-row-name">{p.이름}</span>
                   {p.지식수 > 0 && <Icon name="file" size={12} />}
@@ -301,7 +311,12 @@ export default function Sidebar({
                 </button>
               ))}
               {필터된_프로젝트.length > 6 && (
-                <button type="button" className="project-more-btn" onClick={() => set프로젝트_모두_보기((v) => !v)}>
+                <button
+                  type="button"
+                  className="project-more-btn"
+                  onClick={() => set프로젝트_모두_보기((v) => !v)}
+                  aria-expanded={프로젝트_모두_보기}
+                >
                   {프로젝트_모두_보기 ? '접기' : `모두 보기 (${필터된_프로젝트.length})`}
                 </button>
               )}
@@ -323,7 +338,7 @@ export default function Sidebar({
       </div>
 
       {삭제확인_id !== null && (
-        <div className="delete-confirm">
+        <div className="delete-confirm" role="alertdialog" aria-modal="true" aria-label="대화 삭제 확인">
           <p className="proposal-warning">
             '{conversations.find((c) => c.id === 삭제확인_id)?.제목 || ''}' 대화를 삭제할까요? 되돌릴 수
             없습니다.
@@ -344,6 +359,6 @@ export default function Sidebar({
           </div>
         </div>
       )}
-    </div>
+    </nav>
   )
 }

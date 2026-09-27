@@ -33,22 +33,23 @@ export default function TopNav({ current, onChange, 사용자_이름, onLogout }
   return (
     <div className="top-nav">
       <span className="top-nav-title">산업AI팀 사업 통합관리</span>
-      <div className="top-nav-tabs">
+      <nav className="top-nav-tabs" aria-label="주요 메뉴">
         {탭_목록.map((tab) => (
           <button
             key={tab}
             className={`top-nav-tab ${tab === current ? 'top-nav-tab-active' : ''}`}
             onClick={() => onChange(tab)}
+            aria-current={tab === current ? 'page' : undefined}
           >
             <Icon name={탭_아이콘[tab]} size={15} />
             {tab}
           </button>
         ))}
-      </div>
+      </nav>
       {사용자_이름 && (
         <div className="top-nav-account">
           <span>{사용자_이름}님</span>
-          <button className="btn btn-secondary" onClick={onLogout}>
+          <button className="btn btn-secondary" onClick={onLogout} aria-label="로그아웃">
             로그아웃
           </button>
         </div>
