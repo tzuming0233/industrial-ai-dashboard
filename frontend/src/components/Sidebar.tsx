@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { searchConversations, type 대화, type 대화_검색_결과, type 프로젝트 } from '../api'
 import Icon from './Icon'
 
@@ -139,6 +140,29 @@ export default function Sidebar({
     return 맵
   }, [일반])
 
+  // 대화 수가 늘어나도 DOM에는 화면에 보이는 만큼만 그리기 위해, 날짜 구분선(header)과
+  // 대화 행(row)을 하나의 평평한 배열로 합쳐 가상 스크롤러에 넘긴다.
+  type 가상_항목 = { 유형: 'header'; 라벨: 날짜버킷 } | { 유형: 'row'; 대화: 대화 }
+
+  const 가상_항목들 = useMemo(() => {
+    const 항목들: 가상_항목[] = []
+    for (const 버킷 of _날짜_버킷_순서) {
+      const 목록 = 일반_날짜별.get(버킷)
+      if (!목록 || 목록.length === 0) continue
+      항목들.push({ 유형: 'header', 라벨: 버킷 })
+      for (const c of 목록) 항목들.push({ 유형: 'row', 대화: c })
+    }
+    return 항목들
+  }, [일반_날짜별])
+
+  const 목록_스크롤_ref = useRef<HTMLDivElement>(null)
+  const 가상화 = useVirtualizer({
+    count: 가상_항목들.length,
+    getScrollElement: () => 목록_스크롤_ref.current,
+    estimateSize: (i) => (가상_항목들[i].유형 === 'header' ? 26 : 40),
+    overscan: 8,
+  })
+
   function 편집_시작(d: 대화) {
     set편집_값(d.제목 || '')
     set편집중_id(d.id)
@@ -248,7 +272,7 @@ export default function Sidebar({
         />
       </div>
 
-      <div className="conv-list" role="list" aria-label="대화 목록">
+      <div className="conv-list" role="list" aria-label="대화 목록" ref={목록_스크롤_ref}>
         {검색_결과 !== null ? (
           <div className="conv-group">
             <p className="conv-group-label">검색 결과{!검색_로딩 && ` (${검색_결과.length})`}</p>
@@ -323,16 +347,31 @@ export default function Sidebar({
             </div>
 
             {필터된_목록.length === 0 && <p className="sidebar-caption">검색 결과가 없습니다.</p>}
-            {_날짜_버킷_순서.map((버킷) => {
-              const 목록 = 일반_날짜별.get(버킷)
-              if (!목록 || 목록.length === 0) return null
-              return (
-                <div key={버킷} className="conv-group">
-                  <p className="conv-group-label">{버킷}</p>
-                  {목록.map(대화_행)}
-                </div>
-              )
-            })}
+            <div style={{ position: 'relative', width: '100%', height: 가상화.getTotalSize() }}>
+              {가상화.getVirtualItems().map((가상_행) => {
+                const 항목 = 가상_항목들[가상_행.index]
+                return (
+                  <div
+                    key={가상_행.key}
+                    ref={가상화.measureElement}
+                    data-index={가상_행.index}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${가상_행.start}px)`,
+                    }}
+                  >
+                    {항목.유형 === 'header' ? (
+                      <p className="conv-group-label">{항목.라벨}</p>
+                    ) : (
+                      대화_행(항목.대화)
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </>
         )}
       </div>
