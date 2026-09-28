@@ -14,6 +14,7 @@ import {
   type 온톨로지_노드,
 } from '../api'
 import OntologyGraph, { type 그래프_노드, type 그래프_엣지 } from './OntologyGraph'
+import OntologyGraph3D from './OntologyGraph3D'
 import Icon from './Icon'
 import { 고정_색상맵, 보조텍스트색 } from '../theme'
 
@@ -59,6 +60,7 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote, 프�
 
   const [초기화_확인, set초기화_확인] = useState(false)
   const [노트_생성중, set노트_생성중] = useState(false)
+  const [보기_모드, set보기_모드] = useState<'2d' | '3d'>('2d')
 
   async function 새로고침() {
     const [biz, n, r] = await Promise.all([
@@ -381,28 +383,63 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote, 프�
         </div>
       ) : (
         <>
+          <div className="tag-chip-row">
+            <button
+              type="button"
+              className={`tag-chip ${보기_모드 === '2d' ? 'tag-chip-active' : ''}`}
+              onClick={() => set보기_모드('2d')}
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              className={`tag-chip ${보기_모드 === '3d' ? 'tag-chip-active' : ''}`}
+              onClick={() => set보기_모드('3d')}
+            >
+              3D
+            </button>
+          </div>
+
           <div className="chart-box chart-box-full ontology-graph-box">
-            <OntologyGraph
-              nodes={그래프_노드들}
-              edges={그래프_엣지들}
-              height={460}
-              onNodeClick={(id) => {
-                set클릭된_노드id(id)
-                set클릭된_엣지id(null)
-                set연결대상id(null)
-                set관계유형입력('')
-              }}
-              onEdgeClick={(id) => {
-                set클릭된_엣지id(id)
-                set클릭된_노드id(null)
-              }}
-              onDragConnect={(fromId, toId) => {
-                set클릭된_노드id(fromId)
-                set연결대상id(toId)
-                set관계유형입력('')
-                set클릭된_엣지id(null)
-              }}
-            />
+            {보기_모드 === '2d' ? (
+              <OntologyGraph
+                nodes={그래프_노드들}
+                edges={그래프_엣지들}
+                height={460}
+                onNodeClick={(id) => {
+                  set클릭된_노드id(id)
+                  set클릭된_엣지id(null)
+                  set연결대상id(null)
+                  set관계유형입력('')
+                }}
+                onEdgeClick={(id) => {
+                  set클릭된_엣지id(id)
+                  set클릭된_노드id(null)
+                }}
+                onDragConnect={(fromId, toId) => {
+                  set클릭된_노드id(fromId)
+                  set연결대상id(toId)
+                  set관계유형입력('')
+                  set클릭된_엣지id(null)
+                }}
+              />
+            ) : (
+              <OntologyGraph3D
+                nodes={그래프_노드들}
+                edges={그래프_엣지들}
+                height={460}
+                onNodeClick={(id) => {
+                  set클릭된_노드id(id)
+                  set클릭된_엣지id(null)
+                  set연결대상id(null)
+                  set관계유형입력('')
+                }}
+                onEdgeClick={(id) => {
+                  set클릭된_엣지id(id)
+                  set클릭된_노드id(null)
+                }}
+              />
+            )}
           </div>
 
           {클릭된_엣지 && (

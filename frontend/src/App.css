@@ -1128,6 +1128,22 @@
   opacity: 1;
 }
 
+.mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 12px 0;
+  background: var(--카드-배경);
+  border: 1px solid var(--테두리색);
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
 .code-copy-btn:hover {
   background: var(--배경색);
   color: var(--본문색);

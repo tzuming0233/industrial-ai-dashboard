@@ -21,6 +21,7 @@ import {
 import ProposalCard from './ProposalCard'
 import QuestionCard from './QuestionCard'
 import Icon from './Icon'
+import MermaidDiagram from './MermaidDiagram'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 type Props = {
@@ -79,9 +80,17 @@ function 저장된_모델_불러오기(): 모델선택 {
 function 코드블록({ children }: { children?: ReactNode }) {
   const ref = useRef<HTMLPreElement>(null)
   // react-markdown은 ```python 같은 펜스를 <pre><code className="language-python">으로 넘긴다.
-  const 코드_요소 = isValidElement(children) ? (children as ReactElement<{ className?: string }>) : null
+  const 코드_요소 = isValidElement(children)
+    ? (children as ReactElement<{ className?: string; children?: ReactNode }>)
+    : null
   const 언어 = /language-([\w+#-]+)/.exec(코드_요소?.props.className ?? '')?.[1]
   const [복사됨, set복사됨] = useState(false)
+
+  if (언어 === 'mermaid') {
+    const 원본_children = 코드_요소?.props.children
+    const 원본 = Array.isArray(원본_children) ? 원본_children.join('') : String(원본_children ?? '')
+    return <MermaidDiagram code={원본} />
+  }
 
   async function 복사() {
     const text = ref.current?.textContent ?? ''

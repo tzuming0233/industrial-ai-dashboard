@@ -1,0 +1,1 @@
+import{h as e,o as t}from"./theme-B-lyF2aU.js";var n=e();function r({value:e}){let[r,i]=t[e]??[`#F5F5F5`,`#8C8C8C`];return(0,n.jsx)(`span`,{className:`status-badge`,style:{background:r,color:i},children:e})}export{r as t};
