@@ -119,6 +119,12 @@ SYSTEM_PROMPT = (
     "정확한 관계 id를 확인한 뒤 propose_delete_relations로 제안하세요. 관계유형이나 설명만 잘못됐다면 "
     "(어느 노드끼리 연결됐는지는 그대로) 지우고 새로 만들 필요 없이 propose_update_relations로 그 부분만 "
     "고치자고 제안하세요.\n"
+    "- 지금 대화가 프로젝트에 속해 있으면(시스템 프롬프트 맨 앞에 '[현재 대화는 사용자의 프로젝트 "
+    "...(project_id=N)에 속해 있습니다]'로 안내됨) 이 프로젝트의 대화나 지식 파일에서 언급된 개념(인물/"
+    "기술/문서/용어/조직 등) 사이의 관계는 propose_add_relations가 아니라 add_project_relations로 "
+    "기록하세요 — project_id는 안내된 값을 그대로 쓰고, 사용자 승인 없이 그 프로젝트만의 지식그래프에 "
+    "바로 쌓입니다(프로젝트 화면에서 나중에 직접 고칠 수 있음). 반대로 프로젝트에 속하지 않은 일반 "
+    "대화에서는 add_project_relations를 절대 쓰지 말고 지금처럼 propose_add_relations를 쓰세요.\n"
     "- 사용자가 '저번에', '예전에 얘기했잖아', '이전 대화에서' 같은 표현으로 지금 보이는 대화 범위보다 "
     "더 오래된 내용이나 다른 대화창에서 나눴던 내용을 참조하면, search_past_conversations로 이 시스템의 "
     "전체 대화 기록(다른 대화창 포함)을 검색해서 실제로 찾아본 뒤 답하세요. 짐작으로 답하지 말고, 못 찾으면 "
@@ -381,6 +387,46 @@ TOOLS = [
                 }
             },
             "required": ["relations"],
+        },
+    },
+    {
+        "name": "add_project_relations",
+        "description": (
+            "지금 대화가 프로젝트에 속해 있을 때만 쓴다(시스템 프롬프트에 '[현재 대화는 프로젝트 ...에 "
+            "속해 있습니다 (project_id=N)]'로 안내됨 — 이 안내가 없으면 이 도구를 쓰지 말고 대신 "
+            "propose_add_relations를 쓸 것). 이 프로젝트의 대화·지식 파일에서 나온 개념(인물/기술/"
+            "문서/용어/조직 등) 사이의 관계를 그 프로젝트 전용 지식그래프에 기록한다. "
+            "propose_add_relations와 달리 사용자 승인을 기다리지 않고 즉시 반영되며, 프로젝트 화면의 "
+            "그래프에서 나중에 직접 수정·삭제할 수 있다. 프로젝트와 무관한 사업현황/노트 온톨로지에는 "
+            "이 도구를 쓰지 말 것."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "integer",
+                    "description": "시스템 프롬프트에 안내된 현재 프로젝트의 project_id를 그대로 사용",
+                },
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "node1_name": {"type": "string", "description": "개념 이름"},
+                            "node1_type": {"type": "string", "description": "자유 개념 유형(예: 인물, 기술, 문서, 용어, 조직)"},
+                            "node2_name": {"type": "string", "description": "node1_name과 동일한 규칙"},
+                            "node2_type": {"type": "string", "description": "node1_type과 동일한 규칙"},
+                            "relation_type": {
+                                "type": "string",
+                                "description": "예: 담당, 참고, 포함, 관련기술, 협력 등 자유 텍스트",
+                            },
+                            "description": {"type": "string", "description": "관계에 대한 부가 설명(선택)"},
+                        },
+                        "required": ["node1_name", "node1_type", "node2_name", "node2_type", "relation_type"],
+                    },
+                },
+            },
+            "required": ["project_id", "relations"],
         },
     },
     {
@@ -899,6 +945,7 @@ _도구_상태_문구 = {
     "propose_update_business": "수정할 내용을 정리하는 중...",
     "propose_delete_business": "삭제 대상을 정리하는 중...",
     "propose_add_relations": "추가할 관계를 정리하는 중...",
+    "add_project_relations": "프로젝트 지식그래프에 반영하는 중...",
     "propose_delete_relations": "삭제할 관계를 정리하는 중...",
     "propose_update_relations": "수정할 관계를 정리하는 중...",
     "import_uploaded_file_as_data": "업로드한 파일을 반영할 준비를 하는 중...",
@@ -1102,6 +1149,14 @@ def propose_delete_business(ids: list[int]) -> dict:
 
 def propose_add_relations(관계목록: list[dict]) -> dict:
     return {"확인": f"{len(관계목록)}개 관계 추가를 제안했습니다. 화면에서 확인 후 온톨로지에 반영됩니다."}
+
+
+def add_project_relations(프로젝트_id: int, 관계목록: list[dict]) -> dict:
+    """propose_add_relations와 달리 승인 대기 없이 바로 반영된다 — 실제 DB 쓰기는 다른
+    propose_* 도구들과 같은 이유로 여기서 하지 않고(ai_agent.py는 repository.py를 import하지
+    않는 원칙), 스트리밍 루프가 이 호출을 감지해 결과를 '프로젝트_관계_자동반영' 필드로
+    실어 보내면 backend/app/chat.py가 repo.온톨로지_관계_추가로 즉시 커밋한다."""
+    return {"확인": f"{len(관계목록)}개 관계를 프로젝트 지식그래프에 반영했습니다."}
 
 
 def propose_update_relations(변경목록: list[dict]) -> dict:
@@ -1443,6 +1498,7 @@ _상위_키_매핑 = {
     "propose_add_business": {"business_list": "사업목록"},
     "propose_update_business": {"changes": "변경필드"},
     "propose_add_relations": {"relations": "관계목록"},
+    "add_project_relations": {"project_id": "프로젝트_id", "relations": "관계목록"},
     "propose_update_relations": {"updates": "변경목록"},
     "query_ontology": {"query": "검색어"},
     "propose_delete_relations": {"relation_ids": "관계_id_목록"},
@@ -1500,7 +1556,7 @@ def _도구_인자_한글화(name: str, tool_input: dict) -> dict:
     변환됨 = _키_변환(tool_input, _상위_키_매핑.get(name, {}))
     if name == "propose_add_business":
         변환됨["사업목록"] = [_키_변환(항목, _사업항목_키_매핑) for 항목 in 변환됨.get("사업목록", [])]
-    elif name == "propose_add_relations":
+    elif name in ("propose_add_relations", "add_project_relations"):
         변환됨["관계목록"] = [_키_변환(항목, _관계항목_키_매핑) for 항목 in 변환됨.get("관계목록", [])]
     elif name == "propose_update_relations":
         변환됨["변경목록"] = [_키_변환(항목, _관계수정항목_키_매핑) for 항목 in 변환됨.get("변경목록", [])]
@@ -1528,6 +1584,8 @@ def _도구_실행(name: str, tool_input: dict):
         return propose_delete_business(**tool_input)
     if name == "propose_add_relations":
         return propose_add_relations(**tool_input)
+    if name == "add_project_relations":
+        return add_project_relations(**tool_input)
     if name == "propose_update_relations":
         return propose_update_relations(**tool_input)
     if name == "import_uploaded_file_as_data":
@@ -1912,6 +1970,7 @@ def 질의하기_스트림(
 
     대기중_제안 = None
     생성된_파일 = None
+    자동_반영_관계 = None
     for 회차 in range(_도구_호출_반복_상한):
         yield {
             "type": "status",
@@ -1952,6 +2011,7 @@ def 질의하기_스트림(
             yield {
                 "type": "final", "text": 텍스트,
                 "pending_action": 대기중_제안, "생성된_파일": 생성된_파일, "질문_대기": None,
+                "프로젝트_관계_자동반영": 자동_반영_관계,
             }
             return
 
@@ -1975,6 +2035,8 @@ def 질의하기_스트림(
                 생성된_파일 = {"파일명": 파일명, "mime타입": 파일_mime타입(파일명), "내용": 내용_바이트}
             if block.name == "ask_clarifying_question" and not 실패함:
                 질문_대기 = 도구_인자
+            if block.name == "add_project_relations" and not 실패함:
+                자동_반영_관계 = 도구_인자
             결과_블록들.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
@@ -1986,6 +2048,7 @@ def 질의하기_스트림(
             yield {
                 "type": "final", "text": _텍스트_추출(response),
                 "pending_action": 대기중_제안, "생성된_파일": 생성된_파일, "질문_대기": 질문_대기,
+                "프로젝트_관계_자동반영": 자동_반영_관계,
             }
             return
 
@@ -1994,4 +2057,5 @@ def 질의하기_스트림(
     yield {
         "type": "final", "text": "질의 처리 중 도구 호출 횟수 상한을 초과했습니다.",
         "pending_action": 대기중_제안, "생성된_파일": 생성된_파일, "질문_대기": None,
+        "프로젝트_관계_자동반영": 자동_반영_관계,
     }

@@ -694,8 +694,18 @@ def _sse(event: str, data: dict) -> str:
 def _마무리(
     대화_id: int, 텍스트: str, 제안: dict | None, 전체_df: pd.DataFrame | None = None,
     생성된_파일: dict | None = None, 질문_대기: dict | None = None,
+    프로젝트_관계_자동반영: dict | None = None,
 ):
     메시지_id = repo.채팅기록_저장(대화_id, "assistant", 텍스트)
+
+    # add_project_relations는 propose_*와 달리 승인 카드 없이 즉시 반영된다 — ai_agent.py는
+    # repository.py를 import하지 않는 원칙이라 실제 DB 쓰기는 여기서 한다.
+    if 프로젝트_관계_자동반영 and 프로젝트_관계_자동반영.get("관계목록"):
+        repo.온톨로지_관계_추가(
+            프로젝트_관계_자동반영["관계목록"],
+            작성자="AI채팅(프로젝트)",
+            프로젝트_id=프로젝트_관계_자동반영.get("프로젝트_id"),
+        )
 
     생성_파일_응답 = None
     if 생성된_파일:
@@ -738,6 +748,7 @@ def _일반_질문_스트림(대화_id: int, 질문: str, 프로젝트_컨텍스
             yield from _마무리(
                 대화_id, 이벤트["text"], 이벤트.get("pending_action"),
                 생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
+                프로젝트_관계_자동반영=이벤트.get("프로젝트_관계_자동반영"),
             )
 
 
@@ -759,6 +770,7 @@ def _문서_파일_스트림(
                 yield from _마무리(
                     대화_id, 이벤트["text"], 이벤트.get("pending_action"),
                     생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
+                    프로젝트_관계_자동반영=이벤트.get("프로젝트_관계_자동반영"),
                 )
         return
 
@@ -797,6 +809,7 @@ def _문서_파일_스트림(
             yield from _마무리(
                 대화_id, 이벤트["text"], 이벤트.get("pending_action"),
                 생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
+                프로젝트_관계_자동반영=이벤트.get("프로젝트_관계_자동반영"),
             )
 
 
@@ -825,6 +838,7 @@ def _이미지_파일_스트림(
             yield from _마무리(
                 대화_id, 이벤트["text"], 이벤트.get("pending_action"),
                 생성된_파일=이벤트.get("생성된_파일"), 질문_대기=이벤트.get("질문_대기"),
+                프로젝트_관계_자동반영=이벤트.get("프로젝트_관계_자동반영"),
             )
 
 
@@ -850,6 +864,7 @@ def _표_파일_스트림(
     제안 = None
     생성된_파일 = None
     질문_대기 = None
+    프로젝트_관계_자동반영 = None
     for 이벤트 in ai_agent.질의하기_스트림(합쳐진_질문, history=API용_기록, 모델_선택=모델_선택, 프로젝트_시스템=프로젝트_시스템):
         if 이벤트["type"] in ("token", "status"):
             yield _이벤트_전달(이벤트)
@@ -858,21 +873,28 @@ def _표_파일_스트림(
             제안 = 이벤트.get("pending_action")
             생성된_파일 = 이벤트.get("생성된_파일")
             질문_대기 = 이벤트.get("질문_대기")
+            프로젝트_관계_자동반영 = 이벤트.get("프로젝트_관계_자동반영")
 
     if 제안 and 제안.get("유형") == "import_uploaded_file_as_data":
         yield _sse("status", {"message": "AI가 사업현황 필드에 맞게 정리하는 중..."})
         매핑결과 = ai_agent.업로드_매핑_추론(list(원본_df.columns), 원본_df.head(5).to_dict("records"))
         if "오류" in 매핑결과:
             최종_텍스트 += f"\n\n(반영 중 오류가 있었습니다: {매핑결과['오류']})"
-            yield from _마무리(대화_id, 최종_텍스트, None, 생성된_파일=생성된_파일, 질문_대기=질문_대기)
+            yield from _마무리(
+                대화_id, 최종_텍스트, None, 생성된_파일=생성된_파일, 질문_대기=질문_대기,
+                프로젝트_관계_자동반영=프로젝트_관계_자동반영,
+            )
         else:
             결과_df, 경고_목록 = _LLM_매핑_적용(원본_df, 매핑결과)
             yield from _마무리(
                 대화_id, 최종_텍스트, {"유형": "업로드", "결과_df": 결과_df, "경고": 경고_목록}, 전체_df,
-                생성된_파일=생성된_파일, 질문_대기=질문_대기,
+                생성된_파일=생성된_파일, 질문_대기=질문_대기, 프로젝트_관계_자동반영=프로젝트_관계_자동반영,
             )
     else:
-        yield from _마무리(대화_id, 최종_텍스트, 제안, 전체_df, 생성된_파일=생성된_파일, 질문_대기=질문_대기)
+        yield from _마무리(
+            대화_id, 최종_텍스트, 제안, 전체_df, 생성된_파일=생성된_파일, 질문_대기=질문_대기,
+            프로젝트_관계_자동반영=프로젝트_관계_자동반영,
+        )
 
 
 @router.post("/api/conversations/{conversation_id}/messages/stream")

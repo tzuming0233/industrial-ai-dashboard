@@ -350,6 +350,7 @@ function App() {
                 set보는_프로젝트_id(null)
                 refreshConversations()
               }}
+              데이터_갱신_신호={데이터_갱신_신호}
             />
           )}
           <div

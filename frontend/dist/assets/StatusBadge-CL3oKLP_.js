@@ -1,0 +1,1 @@
+import{s as e,y as t}from"./index-3SQ3O4S2.js";var n=t();function r({value:t}){let[r,i]=e[t]??[`#F5F5F5`,`#8C8C8C`];return(0,n.jsx)(`span`,{className:`status-badge`,style:{background:r,color:i},children:t})}export{r as t};

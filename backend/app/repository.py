@@ -428,8 +428,13 @@ def 온톨로지_DB_준비():
         기존_노드_컬럼 = {row[1] for row in conn.execute("PRAGMA table_info(온톨로지_노드)")}
         if "노트_id" not in 기존_노드_컬럼:
             conn.execute("ALTER TABLE 온톨로지_노드 ADD COLUMN 노트_id INTEGER")
+        # 프로젝트별 독립 온톨로지 — 이 값이 NULL이면 기존 전역(노트 페이지) 그래프에 속한
+        # 노드, 값이 있으면 그 프로젝트만의 격리된 그래프에 속한 노드다.
+        if "프로젝트_id" not in 기존_노드_컬럼:
+            conn.execute("ALTER TABLE 온톨로지_노드 ADD COLUMN 프로젝트_id INTEGER")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_온톨로지_노드_사업_id ON 온톨로지_노드 (사업_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_온톨로지_노드_노트_id ON 온톨로지_노드 (노트_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_온톨로지_노드_프로젝트_id ON 온톨로지_노드 (프로젝트_id)")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_온톨로지_관계_출발_노드_id ON 온톨로지_관계 (출발_노드_id)"
         )
@@ -1005,28 +1010,67 @@ def 채팅기록_저장(대화_id: int, role: str, content: str) -> int:
 
 
 @_캐시
-def 온톨로지_노드_불러오기() -> pd.DataFrame:
+def 온톨로지_노드_불러오기(프로젝트_id: int | None = None) -> pd.DataFrame:
+    """프로젝트_id가 None이면 기존 전역 그래프(노트 페이지), 값이 있으면 그 프로젝트만의
+    격리된 그래프를 돌려준다. 기존 행은 모두 프로젝트_id가 NULL이라 인자 없이 부르던
+    기존 호출부의 동작은 그대로 유지된다."""
     conn = sqlite3.connect(DB_PATH)
     try:
-        return pd.read_sql("SELECT * FROM 온톨로지_노드", conn)
+        if 프로젝트_id is None:
+            return pd.read_sql("SELECT * FROM 온톨로지_노드 WHERE 프로젝트_id IS NULL", conn)
+        return pd.read_sql(
+            "SELECT * FROM 온톨로지_노드 WHERE 프로젝트_id = ?", conn, params=(int(프로젝트_id),)
+        )
     finally:
         conn.close()
 
 
 @_캐시
-def 온톨로지_관계_불러오기() -> pd.DataFrame:
+def 온톨로지_관계_불러오기(프로젝트_id: int | None = None) -> pd.DataFrame:
+    """관계 테이블 자체엔 프로젝트_id가 없어 출발 노드의 프로젝트_id로 스코프를 가른다 —
+    관계를 만들 때 항상 같은 스코프의 두 노드끼리만 잇기 때문에 출발 쪽만 봐도 충분하다."""
     conn = sqlite3.connect(DB_PATH)
     try:
-        return pd.read_sql("SELECT * FROM 온톨로지_관계", conn)
+        조건 = "n.프로젝트_id IS NULL" if 프로젝트_id is None else "n.프로젝트_id = ?"
+        인자 = () if 프로젝트_id is None else (int(프로젝트_id),)
+        return pd.read_sql(
+            f"""
+            SELECT r.* FROM 온톨로지_관계 r
+            JOIN 온톨로지_노드 n ON n.id = r.출발_노드_id
+            WHERE {조건}
+            """,
+            conn,
+            params=인자,
+        )
     finally:
         conn.close()
 
 
-def _온톨로지_노드_획득(conn: sqlite3.Connection, 노드: dict, 전체_df: pd.DataFrame) -> int:
-    """노드 설명(유형/이름/사업_id)에 해당하는 온톨로지 노드를 찾고, 없으면 새로 만든다."""
+def _온톨로지_노드_획득(
+    conn: sqlite3.Connection, 노드: dict, 전체_df: pd.DataFrame | None = None, 프로젝트_id: int | None = None
+) -> int:
+    """노드 설명(유형/이름/사업_id)에 해당하는 온톨로지 노드를 찾고, 없으면 새로 만든다.
+
+    프로젝트_id가 있으면(프로젝트 전용 자동 온톨로지) 사업 연결 없이 유형+이름만으로
+    그 프로젝트 스코프 안에서 매칭한다 — 다른 프로젝트나 전역 그래프의 같은 이름 노드와
+    절대 섞이지 않는다."""
     유형 = (노드.get("유형") or "개념").strip()
-    사업_id = 노드.get("사업_id")
     이름 = (노드.get("이름") or "").strip()
+
+    if 프로젝트_id is not None:
+        row = conn.execute(
+            "SELECT id FROM 온톨로지_노드 WHERE 유형 = ? AND 이름 = ? AND 프로젝트_id = ?",
+            (유형, 이름, int(프로젝트_id)),
+        ).fetchone()
+        if row:
+            return row[0]
+        cur = conn.execute(
+            "INSERT INTO 온톨로지_노드 (유형, 이름, 사업_id, 프로젝트_id, 생성일시) VALUES (?, ?, NULL, ?, ?)",
+            (유형, 이름, int(프로젝트_id), _dt.datetime.now().isoformat(timespec="seconds")),
+        )
+        return cur.lastrowid
+
+    사업_id = 노드.get("사업_id")
 
     if 사업_id:
         row = conn.execute("SELECT id FROM 온톨로지_노드 WHERE 사업_id = ?", (int(사업_id),)).fetchone()
@@ -1151,7 +1195,10 @@ def 노트_위키링크_동기화(노트_id: int, 제목: str, 내용: str) -> N
     온톨로지_관계_불러오기.clear()
 
 
-def 온톨로지_관계_추가(관계목록: list[dict], 전체_df: pd.DataFrame, 작성자: str = "AI채팅") -> None:
+def 온톨로지_관계_추가(
+    관계목록: list[dict], 전체_df: pd.DataFrame | None = None, 작성자: str = "AI채팅",
+    프로젝트_id: int | None = None,
+) -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
         for 관계 in 관계목록:
@@ -1159,11 +1206,13 @@ def 온톨로지_관계_추가(관계목록: list[dict], 전체_df: pd.DataFrame
                 conn,
                 {"유형": 관계.get("노드1_유형"), "이름": 관계.get("노드1_이름"), "사업_id": 관계.get("노드1_사업_id")},
                 전체_df,
+                프로젝트_id,
             )
             노드2_id = _온톨로지_노드_획득(
                 conn,
                 {"유형": 관계.get("노드2_유형"), "이름": 관계.get("노드2_이름"), "사업_id": 관계.get("노드2_사업_id")},
                 전체_df,
+                프로젝트_id,
             )
             conn.execute(
                 "INSERT INTO 온톨로지_관계 (출발_노드_id, 도착_노드_id, 관계유형, 설명, 작성자, 생성일시) "
@@ -1220,16 +1269,44 @@ def 온톨로지_관계_수정(관계_id: int, 변경필드: dict) -> None:
     온톨로지_관계_불러오기.clear()
 
 
-def 온톨로지_초기화() -> None:
+def 온톨로지_초기화(프로젝트_id: int | None = None) -> None:
+    """프로젝트_id가 없으면(기존 동작 그대로) 전역 그래프만, 있으면 그 프로젝트 그래프만 지운다."""
     conn = sqlite3.connect(DB_PATH)
     try:
-        conn.execute("DELETE FROM 온톨로지_관계")
-        conn.execute("DELETE FROM 온톨로지_노드")
+        조건 = "프로젝트_id IS NULL" if 프로젝트_id is None else "프로젝트_id = ?"
+        인자 = () if 프로젝트_id is None else (int(프로젝트_id),)
+        conn.execute(
+            f"DELETE FROM 온톨로지_관계 WHERE 출발_노드_id IN (SELECT id FROM 온톨로지_노드 WHERE {조건})",
+            인자,
+        )
+        conn.execute(f"DELETE FROM 온톨로지_노드 WHERE {조건}", 인자)
         conn.commit()
     finally:
         conn.close()
     온톨로지_노드_불러오기.clear()
     온톨로지_관계_불러오기.clear()
+
+
+def 온톨로지_관계_프로젝트_id_조회(관계_id: int) -> int | None:
+    """관계 하나가 어느 프로젝트 그래프에 속하는지(전역이면 None) — 소유권 검사용."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT n.프로젝트_id FROM 온톨로지_관계 r JOIN 온톨로지_노드 n ON n.id = r.출발_노드_id WHERE r.id = ?",
+            (int(관계_id),),
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def 온톨로지_노드_프로젝트_id_조회(노드_id: int) -> int | None:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute("SELECT 프로젝트_id FROM 온톨로지_노드 WHERE id = ?", (int(노드_id),)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
 
 
 def 온톨로지_관계_직접추가(노드1_id: int, 노드2_id: int, 관계유형: str, 설명: str, 작성자: str) -> None:

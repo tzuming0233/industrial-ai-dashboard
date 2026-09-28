@@ -258,20 +258,31 @@ export const getDashboardSummary = () => api<대시보드요약>('/api/dashboard
 
 export const getHistory = () => api<이력행[]>('/api/history')
 
-export const getOntologyNodes = () => api<온톨로지_노드[]>('/api/ontology/nodes')
+export const getOntologyNodes = (projectId?: number) =>
+  api<온톨로지_노드[]>(`/api/ontology/nodes${projectId != null ? `?project_id=${projectId}` : ''}`)
 
-export const getOntologyRelations = () => api<온톨로지_관계[]>('/api/ontology/relations')
+export const getOntologyRelations = (projectId?: number) =>
+  api<온톨로지_관계[]>(`/api/ontology/relations${projectId != null ? `?project_id=${projectId}` : ''}`)
 
-export const addOntologyRelationDirect = (node1_id: number, node2_id: number, relation_type: string) =>
+export const addOntologyRelationDirect = (
+  node1_id: number,
+  node2_id: number,
+  relation_type: string,
+  projectId?: number,
+) =>
   api<{ ok: boolean }>('/api/ontology/relations/direct', {
     method: 'POST',
-    body: JSON.stringify({ node1_id, node2_id, relation_type }),
+    body: JSON.stringify({ node1_id, node2_id, relation_type, project_id: projectId ?? null }),
   })
 
 export const deleteOntologyRelation = (id: number) =>
   api<{ ok: boolean }>(`/api/ontology/relations/${id}`, { method: 'DELETE' })
 
-export const resetOntology = () => api<{ ok: boolean }>('/api/ontology/reset', { method: 'POST' })
+export const resetOntology = (projectId?: number) =>
+  api<{ ok: boolean }>('/api/ontology/reset', {
+    method: 'POST',
+    body: JSON.stringify({ project_id: projectId ?? null }),
+  })
 
 export const saveBusinessRows = (행: 편집_사업행[], 작성자: string) =>
   api<{ ok: boolean }>('/api/business/save', {

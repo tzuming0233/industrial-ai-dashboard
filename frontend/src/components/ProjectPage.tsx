@@ -10,6 +10,7 @@ import {
 } from '../api'
 import Icon from './Icon'
 import { 허용_확장자, 허용된_파일인가 } from './ChatMain'
+import OntologyView from './OntologyView'
 
 type Props = {
   프로젝트_id: number
@@ -21,6 +22,9 @@ type Props = {
   onEdit: (상세: 프로젝트_상세) => void
   onChanged: () => void
   onDeleted: () => void
+  // 이 프로젝트의 지식그래프를 언제 다시 불러올지 — AI 채팅 활동이 있을 때마다 App에서 값이
+  // 바뀐다(Notes 페이지의 전역 온톨로지 뷰와 같은 신호를 그대로 재사용).
+  데이터_갱신_신호?: number
 }
 
 const 지식_허용_확장자 = '.txt,.md,.csv,.xlsx,.xls,.pdf,.hwp,.hwpx,.docx,.pptx'
@@ -46,6 +50,7 @@ export default function ProjectPage({
   onEdit,
   onChanged,
   onDeleted,
+  데이터_갱신_신호,
 }: Props) {
   const [상세, set상세] = useState<프로젝트_상세 | null>(null)
   const [불러오기_오류, set불러오기_오류] = useState<string | null>(null)
@@ -289,6 +294,9 @@ export default function ProjectPage({
                 ))}
               </div>
             )}
+
+            <h3 className="project-section-title">이 프로젝트의 지식그래프</h3>
+            <OntologyView 프로젝트_id={프로젝트_id} 데이터_갱신_신호={데이터_갱신_신호} />
           </div>
 
           <div className="project-side">

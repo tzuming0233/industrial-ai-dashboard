@@ -29,9 +29,12 @@ type Props = {
   데이터_갱신_신호?: number
   // 그래프에서 노트에 연결된 노드를 클릭했을 때 "노트 열기"를 누르면 호출된다.
   onOpenNote?: (노트_id: number) => void
+  // 지정하면 전역(위키 탭) 그래프 대신 그 프로젝트만의 격리된 그래프를 보여준다 —
+  // 사업 필터·노트 관련 UI는 이 스코프에 없는 개념이라 함께 숨긴다.
+  프로젝트_id?: number
 }
 
-export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Props) {
+export default function OntologyView({ 데이터_갱신_신호, onOpenNote, 프로젝트_id }: Props) {
   const [businesses, setBusinesses] = useState<사업행[]>([])
   const [nodes, setNodes] = useState<온톨로지_노드[]>([])
   const [relations, setRelations] = useState<온톨로지_관계[]>([])
@@ -58,7 +61,11 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
   const [노트_생성중, set노트_생성중] = useState(false)
 
   async function 새로고침() {
-    const [biz, n, r] = await Promise.all([getBusiness(), getOntologyNodes(), getOntologyRelations()])
+    const [biz, n, r] = await Promise.all([
+      프로젝트_id != null ? Promise.resolve([]) : getBusiness(),
+      getOntologyNodes(프로젝트_id),
+      getOntologyRelations(프로젝트_id),
+    ])
     setBusinesses(biz)
     setNodes(n)
     setRelations(r)
@@ -235,7 +242,7 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
     if (클릭된_노드id === null || 연결대상id === null || !관계유형입력.trim()) return
     setBusy(true)
     try {
-      await addOntologyRelationDirect(클릭된_노드id, 연결대상id, 관계유형입력.trim())
+      await addOntologyRelationDirect(클릭된_노드id, 연결대상id, 관계유형입력.trim(), 프로젝트_id)
       set클릭된_노드id(null)
       set관계유형입력('')
       set연결대상id(null)
@@ -263,7 +270,7 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
   async function 전체_초기화_실행() {
     setBusy(true)
     try {
-      await resetOntology()
+      await resetOntology(프로젝트_id)
       set초기화_확인(false)
       await 새로고침()
     } finally {
@@ -276,12 +283,23 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
   return (
     <div className="page">
       <p className="sidebar-caption">
-        AI 채팅에서 '이 사업은 저 사업의 후속이야', '이 두 사업은 같은 고객사야' 같은 식으로 이야기하거나,
-        노트 본문에 <b>[[다른 노트 제목]]</b>을 쓰면 여기에 관계가 자동으로 쌓입니다. 사업뿐 아니라
-        노트·고객사·기술·담당자 등 자유로운 개념도 노드가 될 수 있습니다. 그래프에서{' '}
-        <b>노드를 클릭하면 관계 추가</b>, <b>선을 클릭하면 관계 삭제</b>를 할 수 있습니다.
+        {프로젝트_id != null ? (
+          <>
+            이 프로젝트에서 나눈 대화나 올려둔 지식 파일에서 언급된 개념들의 관계가 여기에 자동으로
+            쌓입니다(승인 없이 바로 반영). 그래프에서 <b>노드를 클릭하면 관계 추가</b>,{' '}
+            <b>선을 클릭하면 관계 삭제</b>를 할 수 있습니다.
+          </>
+        ) : (
+          <>
+            AI 채팅에서 '이 사업은 저 사업의 후속이야', '이 두 사업은 같은 고객사야' 같은 식으로
+            이야기하거나, 노트 본문에 <b>[[다른 노트 제목]]</b>을 쓰면 여기에 관계가 자동으로 쌓입니다.
+            사업뿐 아니라 노트·고객사·기술·담당자 등 자유로운 개념도 노드가 될 수 있습니다. 그래프에서{' '}
+            <b>노드를 클릭하면 관계 추가</b>, <b>선을 클릭하면 관계 삭제</b>를 할 수 있습니다.
+          </>
+        )}
       </p>
 
+      {프로젝트_id == null && (
       <div className="project-popover-wrap" ref={필터팝오버_ref}>
         <button
           ref={필터버튼_ref}
@@ -332,6 +350,7 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
           </div>
         )}
       </div>
+      )}
 
       {관계유형_전체목록.length > 0 && (
         <div className="tag-chip-row">
@@ -354,9 +373,11 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
 
       {nodes.length === 0 || 표시할_관계.length === 0 ? (
         <div className="alert alert-info">
-          {선택된_사업id.length > 0
-            ? '선택한 사업들에 대해 아직 쌓인 관계가 없습니다. AI 채팅에서 이야기해보세요.'
-            : '아직 쌓인 온톨로지가 없습니다. AI 채팅에서 이야기하거나 노트에 [[다른 노트 제목]]을 써보세요.'}
+          {프로젝트_id != null
+            ? '아직 쌓인 지식그래프가 없습니다. 이 프로젝트의 대화에서 개념들을 이야기해보세요.'
+            : 선택된_사업id.length > 0
+              ? '선택한 사업들에 대해 아직 쌓인 관계가 없습니다. AI 채팅에서 이야기해보세요.'
+              : '아직 쌓인 온톨로지가 없습니다. AI 채팅에서 이야기하거나 노트에 [[다른 노트 제목]]을 써보세요.'}
         </div>
       ) : (
         <>
@@ -515,9 +536,11 @@ export default function OntologyView({ 데이터_갱신_신호, onOpenNote }: Pr
 
       {nodes.length > 0 && (
         <details className="ontology-reset-box">
-          <summary>온톨로지 전체 초기화</summary>
+          <summary>{프로젝트_id != null ? '이 프로젝트 지식그래프 초기화' : '온톨로지 전체 초기화'}</summary>
           <div className="alert alert-warning" style={{ marginTop: 8 }}>
-            모든 사업/개념/노트 노드와 관계가 삭제됩니다. 되돌릴 수 없습니다(노트 자체는 남습니다).
+            {프로젝트_id != null
+              ? '이 프로젝트의 노드와 관계가 모두 삭제됩니다. 되돌릴 수 없습니다.'
+              : '모든 사업/개념/노트 노드와 관계가 삭제됩니다. 되돌릴 수 없습니다(노트 자체는 남습니다).'}
           </div>
           <label className="radio-label" style={{ margin: '8px 0' }}>
             <input type="checkbox" checked={초기화_확인} onChange={(e) => set초기화_확인(e.target.checked)} />
