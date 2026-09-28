@@ -19,7 +19,7 @@ router = APIRouter(dependencies=[Depends(auth.인증_확인)])
 # 매 요청에 전부 실리지만 시스템 프롬프트 캐시(ai_agent._시스템_프롬프트_구성)로 재사용된다.
 지식_파일당_최대_글자수 = 60_000
 지식_프로젝트당_최대_글자수 = 150_000
-_지식_업로드_최대_바이트 = 10 * 1024 * 1024
+_지식_업로드_최대_바이트 = 25 * 1024 * 1024
 지식_허용_확장자 = (".txt", ".md", ".csv", ".xlsx", ".xls", ".pdf", ".hwp", ".hwpx", ".docx", ".pptx")
 _지침_최대_글자수 = 8000
 
@@ -197,7 +197,7 @@ async def 지식_추가(project_id: int, file: UploadFile = File(...), 사용자
         raise HTTPException(status_code=400, detail="지원하지 않는 형식이에요. (txt, md, csv, xlsx, pdf, hwp, hwpx, docx, pptx)")
     내용 = await file.read()
     if len(내용) > _지식_업로드_최대_바이트:
-        raise HTTPException(status_code=400, detail="파일이 너무 커요. (최대 10MB)")
+        raise HTTPException(status_code=400, detail="파일이 너무 커요. (최대 25MB)")
     try:
         텍스트 = 지식_텍스트_추출(파일명, 내용)
     except ValueError as e:
