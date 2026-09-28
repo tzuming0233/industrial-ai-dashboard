@@ -51,12 +51,49 @@ def _pdf_텍스트_추출(업로드_파일, 최대글자수: int = 15000) -> str
     return 전체
 
 
+def _xhtml_텍스트_추출(xhtml_바이트: bytes) -> str:
+    """hwp5html이 만든 XHTML을 문단은 한 줄, 표는 행마다 " | "로 이은 한 줄로 풀어낸다.
+    표 안 문단은 표 분기에서 이미 처리하므로 일반 <p> 순회에서 다시 세지 않는다(재귀가
+    표를 만나면 그 밑으로 더 내려가지 않고 바로 반환)."""
+
+    def 태그이름(el):
+        return el.tag.rsplit("}", 1)[-1]
+
+    def 처리(el, 줄들: list[str]):
+        이름 = 태그이름(el)
+        if 이름 == "table":
+            for 행 in el.iter():
+                if 태그이름(행) != "tr":
+                    continue
+                셀들 = [
+                    "".join(td.itertext()).strip() for td in 행 if 태그이름(td) in ("td", "th")
+                ]
+                if any(셀들):
+                    줄들.append(" | ".join(셀들))
+            return
+        if 이름 == "p":
+            텍스트 = "".join(el.itertext()).strip()
+            if 텍스트:
+                줄들.append(텍스트)
+            return
+        for 자식 in el:
+            처리(자식, 줄들)
+
+    루트 = _ET.fromstring(xhtml_바이트)
+    줄들: list[str] = []
+    처리(루트, 줄들)
+    return "\n".join(줄들).strip()
+
+
 def _hwp_텍스트_추출(업로드_파일, 최대글자수: int = 15000) -> str:
-    import io
+    """예전엔 hwp5txt(TextTransform)로 본문만 뽑아 표·그림이 <표>/<그림> placeholder로만
+    남았다. hwp5html(HTMLTransform)로 표 구조가 그대로 담긴 XHTML을 만든 뒤 직접 파싱해
+    문단·표 셀 내용을 전부 뽑는다 — pyhwp 자체 테스트 픽스처(charshape.hwp 등)로 실제
+    한글 텍스트가 정확한 순서로 나오는 것을 확인한 방식이다."""
     import tempfile
     from contextlib import closing
 
-    from hwp5.hwp5txt import TextTransform
+    from hwp5.hwp5html import HTMLTransform
     from hwp5.xmlmodel import Hwp5File
 
     with tempfile.NamedTemporaryFile(suffix=".hwp", delete=False) as tmp:
@@ -64,10 +101,9 @@ def _hwp_텍스트_추출(업로드_파일, 최대글자수: int = 15000) -> str
         임시경로 = tmp.name
     try:
         출력 = io.BytesIO()
-        transform = TextTransform().transform_hwp5_to_text
         with closing(Hwp5File(임시경로)) as hwp파일:
-            transform(hwp파일, 출력)
-        전체 = 출력.getvalue().decode("utf-8", errors="ignore").strip()
+            HTMLTransform().transform_hwp5_to_xhtml(hwp파일, 출력)
+        전체 = _xhtml_텍스트_추출(출력.getvalue())
     finally:
         Path(임시경로).unlink(missing_ok=True)
     if len(전체) > 최대글자수:

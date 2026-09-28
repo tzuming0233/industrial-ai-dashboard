@@ -23,7 +23,7 @@ type Props = {
   onDeleted: () => void
 }
 
-const 지식_허용_확장자 = '.txt,.md,.csv,.xlsx,.xls,.pdf,.hwp,.docx'
+const 지식_허용_확장자 = '.txt,.md,.csv,.xlsx,.xls,.pdf,.hwp,.hwpx,.docx,.pptx'
 
 function 상대_날짜(iso: string): string {
   const d = new Date(iso)

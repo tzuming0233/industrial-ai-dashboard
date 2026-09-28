@@ -1,9 +1,16 @@
 import io
 import zipfile
+from pathlib import Path
 
 import pytest
 
 from backend.app import files
+
+# pyhwp(https://github.com/mete0r/pyhwp, AGPLv3+) 자체 테스트 스위트의 픽스처를 그대로
+# 가져왔다 — 실제 바이너리 .hwp를 코드로 만들 방법이 없어, 진짜 한글 문서로 회귀를 검증하려면
+# 이 방법뿐이다. charshape.hwp는 문단 텍스트(한글·영문·아랍어 혼용) 검증용,
+# borderfill.hwp는 표 구조(칸이 비어 있음) 검증용.
+_픽스처_경로 = Path(__file__).parent / "fixtures"
 
 
 def test_docx_텍스트_추출():
@@ -76,3 +83,19 @@ def test_hwpx_텍스트_추출_섹션_없으면_오류():
         zf.writestr("META-INF/manifest.xml", "<x/>")
     with pytest.raises(ValueError):
         files._hwpx_텍스트_추출(files._파일버퍼(버퍼.getvalue(), "빈.hwpx"))
+
+
+def test_hwp_텍스트_추출_실제_문서():
+    """예전(hwp5txt) 방식은 표·그림을 <표>/<그림> placeholder로만 남겼다 — hwp5html 기반으로
+    바꾼 뒤 실제 문단 텍스트가 순서대로 나오는지 진짜 .hwp 픽스처로 확인한다."""
+    바이트 = (_픽스처_경로 / "charshape.hwp").read_bytes()
+    텍스트 = files._hwp_텍스트_추출(files._파일버퍼(바이트, "charshape.hwp"))
+    assert "글자크기" in 텍스트
+    assert "<표>" not in 텍스트 and "<그림>" not in 텍스트
+
+
+def test_hwp_텍스트_추출_표_구조_있는_문서는_오류_없이_처리():
+    """표 칸이 비어 있는 픽스처 — 표 자체가 있어도 예외 없이(빈 결과로) 처리되는지만 확인."""
+    바이트 = (_픽스처_경로 / "borderfill.hwp").read_bytes()
+    텍스트 = files._hwp_텍스트_추출(files._파일버퍼(바이트, "borderfill.hwp"))
+    assert isinstance(텍스트, str)
