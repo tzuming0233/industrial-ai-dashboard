@@ -9,7 +9,8 @@ from pydantic import BaseModel
 
 from backend.app import auth, repository as repo
 from backend.app.files import (
-    _hwp_텍스트_추출, _pdf_텍스트_추출, _업로드_원본_읽기, _파일버퍼,
+    _docx_텍스트_추출, _hwp_텍스트_추출, _hwpx_텍스트_추출, _pdf_텍스트_추출,
+    _pptx_텍스트_추출, _업로드_원본_읽기, _파일버퍼,
 )
 
 router = APIRouter(dependencies=[Depends(auth.인증_확인)])
@@ -19,7 +20,7 @@ router = APIRouter(dependencies=[Depends(auth.인증_확인)])
 지식_파일당_최대_글자수 = 60_000
 지식_프로젝트당_최대_글자수 = 150_000
 _지식_업로드_최대_바이트 = 10 * 1024 * 1024
-지식_허용_확장자 = (".txt", ".md", ".csv", ".xlsx", ".xls", ".pdf", ".hwp", ".docx")
+지식_허용_확장자 = (".txt", ".md", ".csv", ".xlsx", ".xls", ".pdf", ".hwp", ".hwpx", ".docx", ".pptx")
 _지침_최대_글자수 = 8000
 
 
@@ -72,17 +73,14 @@ def 지식_텍스트_추출(파일명: str, 내용: bytes) -> str:
         텍스트 = _pdf_텍스트_추출(버퍼, 최대글자수=한도)
     elif 이름.endswith(".hwp"):
         텍스트 = _hwp_텍스트_추출(버퍼, 최대글자수=한도)
+    elif 이름.endswith(".hwpx"):
+        텍스트 = _hwpx_텍스트_추출(버퍼, 최대글자수=한도)
     elif 이름.endswith(".docx"):
-        from docx import Document
-
-        문서 = Document(버퍼)
-        줄들 = [p.text for p in 문서.paragraphs if p.text.strip()]
-        for 표 in 문서.tables:
-            for 행 in 표.rows:
-                줄들.append(" | ".join(셀.text.strip() for 셀 in 행.cells))
-        텍스트 = "\n".join(줄들)
+        텍스트 = _docx_텍스트_추출(버퍼, 최대글자수=한도)
+    elif 이름.endswith(".pptx"):
+        텍스트 = _pptx_텍스트_추출(버퍼, 최대글자수=한도)
     else:
-        raise ValueError("지원하지 않는 형식이에요. (txt, md, csv, xlsx, pdf, hwp, docx)")
+        raise ValueError("지원하지 않는 형식이에요. (txt, md, csv, xlsx, pdf, hwp, hwpx, docx, pptx)")
 
     텍스트 = 텍스트.strip()
     if not 텍스트:
@@ -196,7 +194,7 @@ async def 지식_추가(project_id: int, file: UploadFile = File(...), 사용자
     소유권_확인(project_id, 사용자["id"])
     파일명 = file.filename or "파일"
     if not 파일명.lower().endswith(지식_허용_확장자):
-        raise HTTPException(status_code=400, detail="지원하지 않는 형식이에요. (txt, md, csv, xlsx, pdf, hwp, docx)")
+        raise HTTPException(status_code=400, detail="지원하지 않는 형식이에요. (txt, md, csv, xlsx, pdf, hwp, hwpx, docx, pptx)")
     내용 = await file.read()
     if len(내용) > _지식_업로드_최대_바이트:
         raise HTTPException(status_code=400, detail="파일이 너무 커요. (최대 10MB)")

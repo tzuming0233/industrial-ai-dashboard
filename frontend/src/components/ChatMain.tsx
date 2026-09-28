@@ -29,8 +29,10 @@ type Props = {
   conversationId: number | null
   onActivity: () => void
   사용자_이름: string | null
-  // 프로젝트 페이지 입력창에서 시작한 새 대화의 첫 질문 — 열리자마자 한 번만 자동 전송한다.
+  // 프로젝트 페이지 입력창에서 시작한 새 대화의 첫 질문(+선택적으로 첨부한 파일) —
+  // 열리자마자 한 번만 자동 전송한다.
   초기_질문: string | null
+  초기_파일: File | null
   onInitialConsumed: () => void
   onOpenProject: (id: number) => void
   // 초안 상태에서 첫 메시지를 보내 실제로 대화가 생성되면 부모에게 알려 현재 선택/목록을
@@ -52,10 +54,11 @@ const 예시_프롬프트_목록 = [
   '최근 계약된 사업 요약해줘',
 ]
 
-const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp,.png,.jpg,.jpeg,.gif,.webp'
+// 프로젝트 대화 시작 컴포저(ProjectPage.tsx)도 첨부 시 같은 형식 제한을 쓰도록 내보낸다.
+export const 허용_확장자 = '.csv,.xlsx,.xls,.pdf,.hwp,.hwpx,.docx,.pptx,.png,.jpg,.jpeg,.gif,.webp'
 const _허용_확장자_목록 = 허용_확장자.split(',')
 
-function 허용된_파일인가(f: File): boolean {
+export function 허용된_파일인가(f: File): boolean {
   const 이름 = f.name.toLowerCase()
   return _허용_확장자_목록.some((ext) => 이름.endsWith(ext))
 }
@@ -232,6 +235,7 @@ export default function ChatMain({
   onActivity,
   사용자_이름,
   초기_질문,
+  초기_파일,
   onInitialConsumed,
   onOpenProject,
   onConversationCreated,
@@ -448,7 +452,7 @@ export default function ChatMain({
     if (loading || !초기_질문 || 초기_전송함_ref.current || messages.length > 0) return
     초기_전송함_ref.current = true
     onInitialConsumed()
-    보내기(초기_질문, null)
+    보내기(초기_질문, 초기_파일)
   }, [loading])
 
   // 파일을 채팅 화면 어디에나 끌어다 놓아 첨부한다(클로드 앱과 동일한 동작).

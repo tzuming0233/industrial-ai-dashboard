@@ -63,8 +63,10 @@ function App() {
   const [projects, setProjects] = useState<프로젝트[]>([])
   // 값이 있으면 AI 채팅 탭의 본문에 채팅 대신 그 프로젝트 페이지를 보여준다.
   const [보는_프로젝트_id, set보는_프로젝트_id] = useState<number | null>(null)
-  // 프로젝트 페이지 입력창에서 시작한 새 대화의 첫 질문 — ChatMain이 열리자마자 한 번 보낸다.
+  // 프로젝트 페이지 입력창에서 시작한 새 대화의 첫 질문(+선택적 첨부 파일) — ChatMain이
+  // 열리자마자 한 번 보낸다.
   const [초기_질문, set초기_질문] = useState<string | null>(null)
+  const [초기_파일, set초기_파일] = useState<File | null>(null)
   const [프로젝트_폼, set프로젝트_폼] = useState<
     { 모드: '새로'; } | { 모드: '편집'; 상세: 프로젝트_상세 } | null
   >(null)
@@ -148,9 +150,10 @@ function App() {
     await refreshConversations()
   }
 
-  async function onStartProjectConversation(프로젝트_id: number, 첫_질문: string) {
+  async function onStartProjectConversation(프로젝트_id: number, 첫_질문: string, 파일: File | null) {
     const { id } = await createConversation(프로젝트_id)
     set초기_질문(첫_질문)
+    set초기_파일(파일)
     await refreshConversations()
     set세션_키((v) => v + 1)
     set보는_프로젝트_id(null)
@@ -360,7 +363,11 @@ function App() {
               onConversationCreated={onConversationCreated}
               사용자_이름={내_이름}
               초기_질문={초기_질문}
-              onInitialConsumed={() => set초기_질문(null)}
+              초기_파일={초기_파일}
+              onInitialConsumed={() => {
+                set초기_질문(null)
+                set초기_파일(null)
+              }}
               onOpenProject={(id) => {
                 set탭('AI 채팅')
                 set보는_프로젝트_id(id)

@@ -9,6 +9,7 @@ import {
   type 프로젝트_상세,
 } from '../api'
 import Icon from './Icon'
+import { 허용_확장자, 허용된_파일인가 } from './ChatMain'
 
 type Props = {
   프로젝트_id: number
@@ -16,7 +17,7 @@ type Props = {
   conversations: 대화[]
   onClose: () => void
   onOpenConversation: (id: number) => void
-  onStartConversation: (프로젝트_id: number, 첫_질문: string) => void
+  onStartConversation: (프로젝트_id: number, 첫_질문: string, 파일: File | null) => void
   onEdit: (상세: 프로젝트_상세) => void
   onChanged: () => void
   onDeleted: () => void
@@ -56,6 +57,11 @@ export default function ProjectPage({
   const [지식_오류, set지식_오류] = useState<string | null>(null)
   const [삭제_확인, set삭제_확인] = useState(false)
   const 파일_ref = useRef<HTMLInputElement>(null)
+  // 새 대화를 시작할 때 같이 보낼 첨부(프로젝트 지식 파일 업로드와는 별개) — ChatMain의
+  // 컴포저와 같은 첨부 UI를 그대로 옮겨왔다.
+  const [시작_첨부, set시작_첨부] = useState<File | null>(null)
+  const [시작_첨부_오류, set시작_첨부_오류] = useState<string | null>(null)
+  const 시작_첨부_ref = useRef<HTMLInputElement>(null)
 
   async function 새로_불러오기() {
     try {
@@ -81,8 +87,20 @@ export default function ProjectPage({
 
   function 시작() {
     const 질문 = 입력.trim()
-    if (!질문) return
-    onStartConversation(프로젝트_id, 질문)
+    if (!질문 && !시작_첨부) return
+    onStartConversation(프로젝트_id, 질문, 시작_첨부)
+    set시작_첨부(null)
+    if (시작_첨부_ref.current) 시작_첨부_ref.current.value = ''
+  }
+
+  function 시작_첨부_시도(f: File | undefined) {
+    if (!f) return
+    if (!허용된_파일인가(f)) {
+      set시작_첨부_오류(`지원하지 않는 파일 형식이에요: ${f.name}`)
+      return
+    }
+    set시작_첨부_오류(null)
+    set시작_첨부(f)
   }
 
   async function 지침_저장() {
@@ -204,6 +222,16 @@ export default function ProjectPage({
 
         <div className="project-columns">
           <div className="project-main">
+            {시작_첨부 && (
+              <div className="attached-file-chip" style={{ marginBottom: 6 }}>
+                <Icon name="paperclip" size={13} />
+                {시작_첨부.name}
+                <button type="button" onClick={() => set시작_첨부(null)} aria-label="첨부 제거">
+                  <Icon name="x" size={12} />
+                </button>
+              </div>
+            )}
+            {시작_첨부_오류 && <p className="proposal-error">{시작_첨부_오류}</p>}
             <div className="project-composer">
               <textarea
                 className="project-composer-input"
@@ -218,11 +246,27 @@ export default function ProjectPage({
                   }
                 }}
               />
+              <input
+                ref={시작_첨부_ref}
+                type="file"
+                accept={허용_확장자}
+                style={{ display: 'none' }}
+                onChange={(e) => 시작_첨부_시도(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary attach-btn"
+                onClick={() => 시작_첨부_ref.current?.click()}
+                title="파일 첨부"
+                aria-label="파일 첨부"
+              >
+                <Icon name="paperclip" size={16} />
+              </button>
               <button
                 type="button"
                 className="btn btn-primary send-btn"
                 onClick={시작}
-                disabled={!입력.trim()}
+                disabled={!입력.trim() && !시작_첨부}
                 title="새 대화 시작"
                 aria-label="새 대화 시작"
               >

@@ -25,7 +25,8 @@ from pydantic import BaseModel
 import ai_agent
 from backend.app import auth, projects, repository as repo
 from backend.app.files import (
-    _업로드_원본_읽기, _hwp_텍스트_추출, _LLM_매핑_적용, _제안_추가행들, _파일버퍼,
+    _업로드_원본_읽기, _docx_텍스트_추출, _hwp_텍스트_추출, _hwpx_텍스트_추출,
+    _pptx_텍스트_추출, _LLM_매핑_적용, _제안_추가행들, _파일버퍼,
 )
 
 router = APIRouter(dependencies=[Depends(auth.인증_확인)])
@@ -761,9 +762,19 @@ def _문서_파일_스트림(
                 )
         return
 
-    # HWP는 Claude가 네이티브로 못 읽어서 지금처럼 텍스트만 추출해 넘긴다.
+    # HWP/HWPX/DOCX/PPTX는 Claude가 네이티브로 못 읽어서 텍스트만 추출해 넘긴다.
+    파일명_소문자 = 첨부.name.lower()
     try:
-        문서_텍스트 = _hwp_텍스트_추출(첨부)
+        if 파일명_소문자.endswith(".hwp"):
+            문서_텍스트 = _hwp_텍스트_추출(첨부)
+        elif 파일명_소문자.endswith(".hwpx"):
+            문서_텍스트 = _hwpx_텍스트_추출(첨부)
+        elif 파일명_소문자.endswith(".docx"):
+            문서_텍스트 = _docx_텍스트_추출(첨부)
+        elif 파일명_소문자.endswith(".pptx"):
+            문서_텍스트 = _pptx_텍스트_추출(첨부)
+        else:
+            raise ValueError(f"지원하지 않는 문서 형식입니다: {첨부.name}")
     except Exception as e:
         답변 = f"'{첨부.name}' 문서를 읽지 못했습니다: {e}"
         yield from _마무리(대화_id, 답변, None)
@@ -899,7 +910,7 @@ async def 메시지_스트림(
 
     파일명_소문자 = 첨부.name.lower() if 첨부 else ""
     표_파일 = 파일명_소문자.endswith((".csv", ".xlsx", ".xls"))
-    문서_파일 = 파일명_소문자.endswith((".pdf", ".hwp"))
+    문서_파일 = 파일명_소문자.endswith((".pdf", ".hwp", ".hwpx", ".docx", ".pptx"))
     이미지_파일 = 파일명_소문자.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
 
     def 이벤트_스트림():

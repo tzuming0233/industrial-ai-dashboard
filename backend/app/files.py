@@ -1,7 +1,9 @@
-"""업로드 파일(CSV/XLSX/PDF/HWP) 파싱과 AI 매핑 결과 적용 — Streamlit import 없음."""
+"""업로드 파일(CSV/XLSX/PDF/HWP/HWPX/DOCX/PPTX) 파싱과 AI 매핑 결과 적용 — Streamlit import 없음."""
 
 import io
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as _ET
 
 import pandas as pd
 
@@ -68,6 +70,68 @@ def _hwp_텍스트_추출(업로드_파일, 최대글자수: int = 15000) -> str
         전체 = 출력.getvalue().decode("utf-8", errors="ignore").strip()
     finally:
         Path(임시경로).unlink(missing_ok=True)
+    if len(전체) > 최대글자수:
+        전체 = 전체[:최대글자수] + "\n...(이하 생략)"
+    return 전체
+
+
+def _docx_텍스트_추출(업로드_파일, 최대글자수: int = 15000) -> str:
+    from docx import Document
+
+    문서 = Document(업로드_파일)
+    줄들 = [p.text for p in 문서.paragraphs if p.text.strip()]
+    for 표 in 문서.tables:
+        for 행 in 표.rows:
+            줄들.append(" | ".join(셀.text.strip() for 셀 in 행.cells))
+    전체 = "\n".join(줄들).strip()
+    if len(전체) > 최대글자수:
+        전체 = 전체[:최대글자수] + "\n...(이하 생략)"
+    return 전체
+
+
+def _pptx_텍스트_추출(업로드_파일, 최대글자수: int = 15000) -> str:
+    from pptx import Presentation
+
+    프레젠테이션 = Presentation(업로드_파일)
+    슬라이드_텍스트들 = []
+    for 순번, 슬라이드 in enumerate(프레젠테이션.slides, start=1):
+        줄들 = []
+        for 도형 in 슬라이드.shapes:
+            if getattr(도형, "has_text_frame", False) and 도형.text_frame.text.strip():
+                줄들.append(도형.text_frame.text)
+            if getattr(도형, "has_table", False):
+                for 행 in 도형.table.rows:
+                    줄들.append(" | ".join(셀.text.strip() for 셀 in 행.cells))
+        if 줄들:
+            슬라이드_텍스트들.append(f"[슬라이드 {순번}]\n" + "\n".join(줄들))
+    전체 = "\n\n".join(슬라이드_텍스트들).strip()
+    if len(전체) > 최대글자수:
+        전체 = 전체[:최대글자수] + "\n...(이하 생략)"
+    return 전체
+
+
+def _hwpx_텍스트_추출(업로드_파일, 최대글자수: int = 15000) -> str:
+    """HWPX(신형 한글 포맷)는 DOCX처럼 ZIP 안에 XML 문단이 들어있는 구조다(공개 표준
+    KS X 6101). 전용 파서 라이브러리가 마땅치 않아(윈도우 전용 COM 자동화 라이브러리
+    뿐) 직접 만든 최소 추출기 — Contents/section*.xml의 <hp:p> 문단마다 <hp:t>
+    텍스트런을 순서대로 이어붙인다. 표·이미지 등 구조는 구분하지 않고 텍스트만 뽑는다."""
+    with zipfile.ZipFile(업로드_파일) as zf:
+        섹션_경로들 = sorted(
+            (n for n in zf.namelist() if n.startswith("Contents/section") and n.endswith(".xml")),
+            key=lambda n: int("".join(filter(str.isdigit, n)) or "0"),
+        )
+        if not 섹션_경로들:
+            raise ValueError("HWPX 본문(Contents/section*.xml)을 찾을 수 없습니다.")
+        문단들 = []
+        for 경로 in 섹션_경로들:
+            루트 = _ET.fromstring(zf.read(경로))
+            for 문단 in 루트.iter():
+                if not 문단.tag.endswith("}p"):
+                    continue
+                조각들 = [런.text for 런 in 문단.iter() if 런.tag.endswith("}t") and 런.text]
+                if 조각들:
+                    문단들.append("".join(조각들))
+    전체 = "\n".join(문단들).strip()
     if len(전체) > 최대글자수:
         전체 = 전체[:최대글자수] + "\n...(이하 생략)"
     return 전체
