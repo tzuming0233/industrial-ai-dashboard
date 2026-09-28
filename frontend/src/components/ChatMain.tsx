@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import {
   applyProposal,
   cancelProposal,
+  createConversation,
   downloadGeneratedFile,
   editMessage,
   fileDownloadUrl,
@@ -23,13 +24,18 @@ import Icon from './Icon'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 type Props = {
-  conversationId: number
+  // null이면 아직 서버에 만들어지지 않은 "새 대화" 초안 상태 — 클로드 앱처럼 첫 메시지를
+  // 실제로 보낼 때 그제서야 대화가 생긴다(빈 대화가 사이드바에 쌓이는 걸 막기 위함).
+  conversationId: number | null
   onActivity: () => void
   사용자_이름: string | null
   // 프로젝트 페이지 입력창에서 시작한 새 대화의 첫 질문 — 열리자마자 한 번만 자동 전송한다.
   초기_질문: string | null
   onInitialConsumed: () => void
   onOpenProject: (id: number) => void
+  // 초안 상태에서 첫 메시지를 보내 실제로 대화가 생성되면 부모에게 알려 현재 선택/목록을
+  // 갱신하게 한다.
+  onConversationCreated: (id: number) => void
 }
 
 // 클로드 앱처럼 시간대별로 다른 인사말 + 이름.
@@ -228,6 +234,7 @@ export default function ChatMain({
   초기_질문,
   onInitialConsumed,
   onOpenProject,
+  onConversationCreated,
 }: Props) {
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<메시지[]>([])
@@ -267,6 +274,9 @@ export default function ChatMain({
   // 이걸 진짜 네트워크 오류로 오인해 화면에 "오류: ..."를 띄우지 않도록 구분한다.
   const 중단_중_ref = useRef(false)
   const 초기_전송함_ref = useRef(false)
+  // 보내기()가 초안 상태에서 막 만든 대화_id — 아래 [conversationId] 리셋 effect가
+  // 이걸 "새로 골라 들어온 대화"로 착각해 방금 시작한 스트림을 중단시키지 않도록 구분한다.
+  const 방금_생성한_id_ref = useRef<number | null>(null)
 
   // 클로드 앱처럼 여러 줄까지 자동으로 늘어나는 입력창(최대 높이는 CSS에서 캡).
   useEffect(() => {
@@ -281,6 +291,13 @@ export default function ChatMain({
   })
 
   useEffect(() => {
+    if (conversationId != null && conversationId === 방금_생성한_id_ref.current) {
+      // 보내기()가 초안 상태에서 방금 만든 대화라 로컬 상태(메시지·스트리밍)가 이미
+      // 최신이다 — 여기서 다시 불러오면 진행 중인 스트림을 중단시켜버리니 건너뛴다.
+      방금_생성한_id_ref.current = null
+      return
+    }
+
     setLoading(true)
     setError(null)
     setPendingProposal(null)
@@ -290,6 +307,15 @@ export default function ChatMain({
     set최근_생성파일(null)
     set편집중_index(null)
     abortRef.current?.abort()
+
+    if (conversationId == null) {
+      // 아직 서버에 만들어지지 않은 새 대화 초안 — 빈 화면만 보여주고 조회할 게 없다.
+      setMessages([])
+      set연결된_사업_라벨(null)
+      set프로젝트_정보(null)
+      setLoading(false)
+      return
+    }
 
     getMessages(conversationId)
       .then((data) => {
@@ -371,7 +397,7 @@ export default function ChatMain({
     }
   }
 
-  function 보내기(질문: string, 파일: File | null) {
+  async function 보내기(질문: string, 파일: File | null) {
     if (isStreaming) return
     if (!질문 && !파일) return
     set편집중_index(null)
@@ -398,7 +424,21 @@ export default function ChatMain({
     const controller = new AbortController()
     abortRef.current = controller
 
-    streamMessage(conversationId, 질문, 파일, 스트림_핸들러_생성(), controller.signal, 모델).catch(() => {
+    let 대상_id = conversationId
+    if (대상_id == null) {
+      try {
+        const 생성됨 = await createConversation()
+        대상_id = 생성됨.id
+        방금_생성한_id_ref.current = 생성됨.id
+        onConversationCreated(생성됨.id)
+      } catch (e) {
+        setIsStreaming(false)
+        setError(e instanceof Error ? e.message : String(e))
+        return
+      }
+    }
+
+    streamMessage(대상_id, 질문, 파일, 스트림_핸들러_생성(), controller.signal, 모델).catch(() => {
       /* onError 핸들러가 이미 상태를 처리함 */
     })
   }
@@ -463,7 +503,7 @@ export default function ChatMain({
   // 클로드 앱의 '재생성' 버튼 — 마지막 답변을 지우고 그 직전 질문으로 다시 받는다.
   // 새 사용자 메시지는 추가하지 않는다(서버가 이미 있던 질문을 재사용).
   function 재생성() {
-    if (isStreaming) return
+    if (isStreaming || conversationId == null) return
     set편집중_index(null)
     바닥_ref.current = true
     set바닥에_있음(true)
@@ -487,7 +527,7 @@ export default function ChatMain({
   // 클로드 앱의 '메시지 편집' — 과거 사용자 메시지를 고쳐서 다시 보내면, 그 뒤에 있던
   // 답변·후속 대화는 화면에서도 서버에서도 전부 버려지고 고친 질문부터 새로 이어간다.
   function 편집_제출(인덱스: number, 새텍스트: string) {
-    if (isStreaming) return
+    if (isStreaming || conversationId == null) return
     set편집중_index(null)
     바닥_ref.current = true
     set바닥에_있음(true)
@@ -511,6 +551,7 @@ export default function ChatMain({
   // 클로드 앱의 생성 중단 버튼 — 지금까지 받은 부분 텍스트를 그대로 화면에 확정하고
   // 서버에도 저장시킨다(안 그러면 새로고침했을 때 방금 본 답변이 사라진다).
   function 중단() {
+    if (conversationId == null) return
     중단_중_ref.current = true
     abortRef.current?.abort()
     const 부분_텍스트 = streamingText
@@ -529,6 +570,7 @@ export default function ChatMain({
   // 낙관적으로 먼저 화면을 바꾸고 서버에 저장한다 — 실패해도 되돌리지 않고 다음
   // 새로고침에서 서버 값과 자연히 맞춰지게 둔다(중요도가 낮은 부가 기능).
   async function 피드백(i: number, 메시지_id: number, 값: 'up' | 'down') {
+    if (conversationId == null) return
     const 새값 = messages[i].rating === 값 ? null : 값
     setMessages((prev) => prev.map((m, idx) => (idx === i ? { ...m, rating: 새값 } : m)))
     try {
@@ -544,7 +586,7 @@ export default function ChatMain({
   }
 
   async function 제안_적용() {
-    if (!pendingProposal) return
+    if (!pendingProposal || conversationId == null) return
     setProposalBusy(true)
     try {
       const res = await applyProposal(conversationId, pendingProposal.action_token)
@@ -561,7 +603,7 @@ export default function ChatMain({
   }
 
   async function 제안_취소() {
-    if (!pendingProposal) return
+    if (!pendingProposal || conversationId == null) return
     setProposalBusy(true)
     try {
       await cancelProposal(conversationId, pendingProposal.action_token)

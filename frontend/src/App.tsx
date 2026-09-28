@@ -78,6 +78,12 @@ function App() {
   // "지금 막 Ctrl+K를 눌렀다"는 값 자체를 true/false로 들고 있다가 Sidebar가 다 쓰면
   // (onSearchFocused) 곧바로 false로 되돌린다.
   const [검색에_포커스할지, set검색에_포커스할지] = useState(false)
+  // ChatMain을 언제 완전히 새로 마운트할지 결정하는 key — currentId 그 자체를 key로 쓰면
+  // "초안 대화에서 첫 메시지를 보내 방금 대화가 생성"되는 경우(null → 실제 id)에도
+  // 리마운트가 일어나 스트리밍 중이던 응답을 잃어버린다. 그래서 진짜 "다른 대화로
+  // 전환"할 때만(새 대화 시작·다른 대화 선택·삭제 후 전환) 이 값을 올리고, 초안이
+  // 스스로 실제 대화로 바뀌는 순간은 건드리지 않는다.
+  const [세션_키, set세션_키] = useState(0)
 
   async function 내_세션_불러오기() {
     try {
@@ -104,14 +110,10 @@ function App() {
       ])
       setBusinesses(bizList)
       setProjects(projectList)
-      if (convList.length === 0) {
-        const { id } = await createConversation()
-        setConversations(await listConversations())
-        setCurrentId(id)
-      } else {
-        setConversations(convList)
-        setCurrentId(convList[0].id)
-      }
+      setConversations(convList)
+      // 대화가 하나도 없어도 미리 만들어두지 않는다 — currentId를 null(초안)로 두면
+      // ChatMain이 빈 화면을 보여주고, 사용자가 실제로 첫 메시지를 보낼 때만 생긴다.
+      setCurrentId(convList.length > 0 ? convList[0].id : null)
       set초기화중(false)
     })()
   }, [인증됨])
@@ -123,22 +125,34 @@ function App() {
     setProjects(projectList)
   }
 
-  async function onNew() {
-    const { id } = await createConversation()
-    await refreshConversations()
+  function onNew() {
+    // 여기서 바로 대화를 만들지 않는다 — "+"를 눌러놓고 아무것도 안 보내면 빈 대화가
+    // 사이드바에 계속 쌓이는 문제가 있었다. 초안(null) 상태만 만들고, ChatMain이
+    // 첫 메시지를 보낼 때 실제로 생성한다(onConversationCreated).
+    set세션_키((v) => v + 1)
+    set보는_프로젝트_id(null)
+    setCurrentId(null)
+  }
+
+  function onSelectConversation(id: number) {
+    set세션_키((v) => v + 1)
     set보는_프로젝트_id(null)
     setCurrentId(id)
   }
 
-  function onSelectConversation(id: number) {
-    set보는_프로젝트_id(null)
+  // ChatMain이 초안 상태에서 첫 메시지를 보내 실제로 대화를 만들었을 때 호출된다 —
+  // 세션_키는 올리지 않아 ChatMain이 그대로 유지된 채(리마운트 없이) 스트리밍이
+  // 이어지고, 목록/현재 선택만 새 대화를 반영하도록 갱신한다.
+  async function onConversationCreated(id: number) {
     setCurrentId(id)
+    await refreshConversations()
   }
 
   async function onStartProjectConversation(프로젝트_id: number, 첫_질문: string) {
     const { id } = await createConversation(프로젝트_id)
     set초기_질문(첫_질문)
     await refreshConversations()
+    set세션_키((v) => v + 1)
     set보는_프로젝트_id(null)
     setCurrentId(id)
   }
@@ -189,13 +203,10 @@ function App() {
     setConversations(list)
     setProjects(await listProjects())
     if (currentId === id) {
-      if (list.length > 0) {
-        setCurrentId(list[0].id)
-      } else {
-        const { id: 새id } = await createConversation()
-        setConversations(await listConversations())
-        setCurrentId(새id)
-      }
+      // 지운 대화를 보고 있었으면 다른 대화로(또는 대화가 하나도 안 남았으면 새 초안으로)
+      // 넘어가는 것도 진짜 "전환"이니 리마운트되게 세션_키를 올린다.
+      set세션_키((v) => v + 1)
+      setCurrentId(list.length > 0 ? list[0].id : null)
     }
   }
 
@@ -265,7 +276,7 @@ function App() {
     )
   }
 
-  if (초기화중 || currentId === null) {
+  if (초기화중) {
     return <p style={{ padding: 24 }}>불러오는 중...</p>
   }
 
@@ -344,8 +355,9 @@ function App() {
             }`}
           >
             <ChatMain
-              key={currentId}
+              key={세션_키}
               conversationId={currentId}
+              onConversationCreated={onConversationCreated}
               사용자_이름={내_이름}
               초기_질문={초기_질문}
               onInitialConsumed={() => set초기_질문(null)}
